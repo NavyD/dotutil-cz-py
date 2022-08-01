@@ -7,9 +7,13 @@ import platform
 import re
 import subprocess as proc
 import sys
+import tempfile
+from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from shutil import which
 from typing import List
+from urllib.parse import urljoin
 
 
 def run_fn(cmd: str, shell=True, stderr=None, **kwargs):
@@ -48,14 +52,114 @@ def eprint(*args, **kwargs):
 
 # pip_install("psutil")
 def check_sys_deps(names: List[str]):
-    from shutil import which
     for name in names:
         if not which(name):
             raise Exception(f"not found dependent command: {name}")
 
 
+class InstallException(Exception):
+    pass
+
+
+class GithubRelease:
+    def __init__(self, repo: str, tag=None) -> None:
+        owner, repo = repo.split('/')
+        base_url = f"https://api.github.com/repos/{owner}/{repo}/releases/" + \
+            f"tags/{tag}" if tag else "latest"
+        r = requests.get(base_url, headers={"Accept": "application/json"})
+        r.raise_for_status()
+        self.data = r.json()
+
+    def get_asset_urls(self) -> List[str]:
+        return [asset["browser_download_url"] for asset in self.data["assets"]]
+
+    def get_one_asset_url(self, name_regex: str) -> str:
+        regex = re.compile(name_regex)
+        urls = [asset["browser_download_url"]
+                for asset in self.data["assets"] if regex.search(asset["name"])]
+        if len(urls) != 1:
+            raise InstallException(
+                f"invalid asset urls {urls} for regex {name_regex}")
+        return urls[0]
+
+
+class BasePackage:
+    def __init__(self, gh: GithubRelease, path: str) -> None:
+        self.gh = gh
+        self.path = Path(path)
+
+    def install(self):
+        if self.path.exists():
+            raise InstallException(f"{self.path} exists")
+
+
+class ClashPackage:
+    def __init__(self, path: str, config_path: str) -> None:
+        self.clash = GithubRelease("Dreamacro/clash", tag="premium")
+        self.yacd = GithubRelease("haishanh/yacd")
+        self.path = Path(path)
+        self.config_path = Path(config_path)
+
+    def install(self):
+        urls = self.clash.get_asset_urls()
+        log.info(f"found update available: {cur_ver} -> {latest_ver}")
+        if arch := {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]:
+            raise Exception("unsupported system: " + platform.machine())
+        os = platform.system().lower()
+
+        pass
+
+
+def is_updated(path: Path, url: str) -> bool:
+    if not path.exists():
+        return True
+    r = requests.head(url)
+    r.raise_for_status()
+    new = datetime.strptime(
+        r.headers["Last-Modified"], "%a, %d %b %Y %H:%M:%S %Z")
+    cur = datetime.fromtimestamp(os.path.getmtime(path))
+    return cur < new
+
+
+class GhRelPackage:
+    def __init__(self, repo: str, path: str, tag=None) -> None:
+        owner, repo = repo.split('/')
+        client = requests.Session()
+        client.headers["Accept"] = "application/json"
+        base_url = f"https://api.github.com/repos/{owner}/{repo}/releases/" + \
+            f"tags/{tag}" if tag else "latest"
+        self._client = client
+        self.path = Path(path)
+        pass
+
+    def check(self) -> bool:
+        if not self.path.exists():
+            return True
+
+        os.path.getctime()
+
+    def download(self, url: str) -> Path:
+        with self._client.get(url, stream=True) as r:
+            r.raise_for_status()
+            with tempfile.TemporaryFile() as f:
+                for chunk in r.iter_content(chunk_size=4096):
+                    f.write(chunk)
+                return f
+
+
 def install():
     run_cmd("curl -L https://nixos.org/nix/install | sh -s -- --no-daemon")
+
+
+def install_clash_er(config_path: str, bin_path=None, config_file_path=None):
+    if bin_path:
+        bin_path = Path(bin_path)
+    if arch := {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]:
+        raise Exception("unsupported system: " + platform.machine())
+    os = platform.system().lower()
+    clash = GithubRelease(
+        "Dreamacro/clash", tag="premium").get_one_asset_url(f"{os}-{arch}-(\.?\d+)+.gz")
+    yacd = GithubRelease("haishanh/yacd").get_one_asset_url("yacd.tar.xz")
 
 
 def install_clash(bin_path=None):
@@ -83,6 +187,7 @@ def install_clash(bin_path=None):
     path = f"/tmp/clash-{latest_ver}"
     # with requests.get(url, stream=True) as resp:
     #     resp.raise_for_status()
+
 
 if __name__ == "__main__":
     log.basicConfig(
