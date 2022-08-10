@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+import hashlib
+import logging
+import os
+from pathlib import Path
+from subprocess import check_call
+from sys import stderr, stdin
+from typing import Set
+
+"""
+在chezmoi更新.root文件后比较/root并应用到/root中
+"""
+
+logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
+                    level=logging.INFO,
+                    datefmt='%Y-%m-%d %H:%M:%S')
+
+
+class SetupExcetion(Exception):
+    pass
+
+
+class SyncRoot:
+    def __init__(self, mapped_root: Path, cache_path: Path, old_cache_path: Path) -> None:
+        if not mapped_root.exists():
+            return
+        elif mapped_root.is_file():
+            raise SetupExcetion(f"mapped root is not dir: {mapped_root}")
+
+        self.mapped_root = mapped_root
+        self.cache_path = cache_path
+        self.old_cache_path = old_cache_path
+        self.log = logging.getLogger(__name__)
+        pass
+
+    def root_path(self, path) -> Path:
+        return Path("/").joinpath(os.path.relpath(path, self.mapped_root))
+
+    def get_removed_files(self) -> Set[Path]:
+        files = set()
+        def readfiles(path):
+            with open(path, 'r') as f:
+                file = Path(f.readline().rstrip())
+                if not file.exists():
+                    files.add(file)
+
+        if self.cache_path.is_file():
+            self.log.debug(f"found cache {self.cache_path}")
+            readfiles(self.cache_path)
+
+        if self.old_cache_path.is_file():
+            self.log.debug(f"found old cache {self.old_cache_path}")
+            readfiles(self.old_cache_path)
+
+        return files
+
+    def save_cache(self):
+        self.log.debug(
+            f"saving current .root files after apply to {self.old_cache_path}")
+        count = 0
+        with open(self.old_cache_path, 'w') as f:
+            for path in self.mapped_root.rglob("*"):
+                if path.is_file():
+                    count += 1
+                    f.write(f"{path}\n")
+        self.log.debug(f"saved {count} files to {self.old_cache_path}")
+
+    def remove_files(self):
+        def rm(path: Path):
+            self.log.info(f"removing {path}")
+            if not path.exists():
+                self.log.warning(f"not found root file {path}")
+            elif path == Path("/"):
+                raise SetupExcetion(f"invalid path {path}")
+
+            check_call(
+                f"rm -rf {path}", shell=True)
+
+        removed_files = self.get_removed_files()
+        if not removed_files:
+            return
+
+        logging.info(f"found removal files for root: {removed_files}")
+        remove_all = False
+        for path in removed_files:
+            root_file = self.root_path(path)
+            skipped = False
+            if not remove_all:
+                while True:
+                    print(
+                        f"{path} has been removed from home, whether to remove root file {root_file}?[remove, all-remove, skip]:", end='')
+                    line = stdin.readline().strip()
+                    if "remove".startswith(line):
+                        pass
+                    elif "all-remove".startswith(line):
+                        remove_all = True
+                    elif "skip".startswith(line):
+                        skipped = True
+                    else:
+                        print(f"unkown option: {line}")
+                        continue
+                    break
+            if not skipped:
+                rm(root_file)
+            else:
+                self.log.info(f"skipped remove {root_file}")
+
+    def sync(self):
+        self.remove_files()
+
+        diff_count = 0
+        for path in self.mapped_root.rglob("*"):
+            if path.is_file():
+                root_path = self.root_path(path)
+                if not root_path.exists():
+                    self.log.info(
+                        f"copying {path} to {root_path} for new root file")
+                    check_call(
+                        f"sudo mkdir -p {root_path.parent} && sudo cp --no-preserve=ownership {path} {root_path}", shell=True)
+                    diff_count += 1
+
+                elif root_path.is_file():
+                    if changed(path, root_path):
+                        self.log.info(
+                            f"copying changed file {path} -> {root_path}")
+                        check_call(
+                            f"sudo cp --preserve=mode {path} {root_path}", shell=True)
+                        diff_count += 1
+                else:
+                    raise SetupExcetion(f"invalid file {root_path}")
+
+        if diff_count > 0:
+            self.log.info(f"copied {diff_count} files from {self.mapped_root}")
+
+        self.save_cache()
+
+
+def get_digest(path: Path) -> str:
+    h = hashlib.md5()
+    buf = memoryview(bytearray(128*1024))
+    with open(path, "rb", buffering=0) as f:
+        while n := f.readinto(buf):
+            h.update(buf[:n])
+    return h.hexdigest()
+
+
+def changed(src: Path, dst: Path) -> bool:
+    if not src.exists():
+        return False
+    if not src.is_file():
+        raise SetupExcetion(f"{src} is not a file")
+    s = src.stat()
+    d = dst.stat()
+    return s.st_mode != d.st_mode or get_digest(src) != get_digest(dst)
+
+
+MAPPED_ROOT_DIR = Path.home().joinpath(".root")
+cache_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
+old_cache_path = Path('{{joinPath .chezmoi.cacheDir ".root.old"}}')
+
+try:
+    SyncRoot(MAPPED_ROOT_DIR, cache_path, old_cache_path).sync()
+except SetupExcetion as e:
+    logging.error(f"{e}", file=stderr)
+    exit(1)

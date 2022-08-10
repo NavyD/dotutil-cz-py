@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -25,6 +26,10 @@ from sys import stderr
   * 否则跳过
 * 否则复制新文件到root，注意更新文件owner
 """
+
+logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
+                    level=logging.INFO,
+                    datefmt='%Y-%m-%d %H:%M:%S')
 
 
 class SetupExcetion(Exception):
@@ -57,21 +62,34 @@ def main():
         raise SetupExcetion(f"mapped root is not dir: {MAPPED_ROOT_DIR}")
 
     diff_count = 0
+    files = set()
     for path in MAPPED_ROOT_DIR.rglob("*"):
         if path.is_file():
+            files.add(path)
+
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
             if changed(root_path, path):
-                print(f"copying changed file {root_path} -> {path}")
+                logging.info(f"copying changed file {root_path} -> {path}")
                 shutil.copyfile(root_path, path)
                 diff_count += 1
 
     if diff_count > 0:
-        print(f"found changed {diff_count} files")
+        logging.info(f"found changed {diff_count} files")
+
+    # cache list
+    cache_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
+    logging.debug(f"saving home files before apply to {cache_path}")
+    count = 0
+    with open(cache_path, "w") as f:
+        for p in files:
+            f.write(f"{p}\n")
+            count += 1
+    logging.debug(f"saved {count} files to {cache_path}")
 
 
 try:
     main()
 except SetupExcetion as e:
-    print(f"{e}", file=stderr)
+    logging.error(f"{e}", file=stderr)
     exit(1)
