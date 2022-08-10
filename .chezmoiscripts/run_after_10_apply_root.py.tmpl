@@ -12,7 +12,7 @@ from typing import Set
 """
 
 logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
-                    level=logging.INFO,
+                    level=logging.DEBUG,
                     datefmt='%Y-%m-%d %H:%M:%S')
 
 
@@ -40,9 +40,10 @@ class SyncRoot:
         files = set()
         def readfiles(path):
             with open(path, 'r') as f:
-                file = Path(f.readline().rstrip())
-                if not file.exists():
-                    files.add(file)
+                while line := f.readline():
+                    file = Path(line.rstrip())
+                    if not file.exists():
+                        files.add(file)
 
         if self.cache_path.is_file():
             self.log.debug(f"found cache {self.cache_path}")
@@ -74,10 +75,11 @@ class SyncRoot:
                 raise SetupExcetion(f"invalid path {path}")
 
             check_call(
-                f"rm -rf {path}", shell=True)
+                f"sudo rm -rf {path}", shell=True)
 
         removed_files = self.get_removed_files()
         if not removed_files:
+            self.log.debug("empty removed files")
             return
 
         logging.info(f"found removal files for root: {removed_files}")
@@ -88,7 +90,7 @@ class SyncRoot:
             if not remove_all:
                 while True:
                     print(
-                        f"{path} has been removed from home, whether to remove root file {root_file}?[remove, all-remove, skip]:", end='')
+                        f"whether to remove root file {root_file}?[remove, all-remove, skip]:", end='', flush=True)
                     line = stdin.readline().strip()
                     if "remove".startswith(line):
                         pass
