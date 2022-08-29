@@ -3,8 +3,13 @@ import hashlib
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 from sys import stderr
+
+# import util
+sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
+from util import SetupExcetion, config_log, has_changed
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root
@@ -27,31 +32,6 @@ from sys import stderr
 * 否则复制新文件到root，注意更新文件owner
 """
 
-logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
-                    level=logging.INFO,
-                    datefmt='%Y-%m-%d %H:%M:%S')
-
-
-class SetupExcetion(Exception):
-    pass
-
-
-def get_digest(path: Path) -> str:
-    h = hashlib.md5()
-    buf = memoryview(bytearray(128*1024))
-    with open(path, "rb", buffering=0) as f:
-        while n := f.readinto(buf):
-            h.update(buf[:n])
-    return h.hexdigest()
-
-
-def changed(src: Path, dst: Path) -> bool:
-    if not src.exists():
-        return False
-    if not src.is_file():
-        raise SetupExcetion(f"{src} is not a file")
-    return get_digest(src) != get_digest(dst)
-
 
 def main():
     MAPPED_ROOT_DIR = Path.home().joinpath(".root")
@@ -61,32 +41,21 @@ def main():
     elif MAPPED_ROOT_DIR.is_file():
         raise SetupExcetion(f"mapped root is not dir: {MAPPED_ROOT_DIR}")
 
-    diff_count = 0
-    files = set()
+    count = 0
     for path in MAPPED_ROOT_DIR.rglob("*"):
         if path.is_file():
-            files.add(path)
-
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
-            if changed(root_path, path):
+            if has_changed(root_path, path):
                 logging.info(f"copying changed file {root_path} -> {path}")
                 shutil.copyfile(root_path, path)
-                diff_count += 1
+                count += 1
 
-    if diff_count > 0:
-        logging.info(f"found changed {diff_count} files")
+    logging.info(f"found changed {count} files")
 
-    # cache list
-    cache_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
-    logging.debug(f"saving home files before apply to {cache_path}")
-    count = 0
-    with open(cache_path, "w") as f:
-        for p in files:
-            f.write(f"{p}\n")
-            count += 1
-    logging.debug(f"saved {count} files to {cache_path}")
 
+config_log(
+    level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
 
 try:
     main()
