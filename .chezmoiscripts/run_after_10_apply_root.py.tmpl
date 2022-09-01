@@ -108,6 +108,15 @@ class SyncRoot:
                 f"/usr/bin/sudo /usr/bin/cp --preserve=mode,timestamps {src} {dst}", shell=True)
             diff_count += 1
 
+        def backup_at_first(path: Path):
+            backup_path = path.with_name(f'{path.name}.backup')
+            if backup_path.exists():
+                return
+            logging.info(
+                f"backing up {path} to {backup_path} when first applied")
+            check_call(
+                f"/usr/bin/sudo /usr/bin/cp -p {path} {backup_path}", shell=True)
+
         self.remove_root_files()
 
         for path in self.mapped_root.rglob("*"):
@@ -117,6 +126,7 @@ class SyncRoot:
                     copy_to_root(path, root_path)
                 elif root_path.is_file():
                     if has_changed(path, root_path):
+                        backup_at_first(root_path)
                         copy_to_root(path, root_path)
                 else:
                     raise SetupExcetion(f"invalid file {root_path}")
