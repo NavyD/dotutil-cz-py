@@ -98,13 +98,14 @@ class SyncRoot:
         diff_count = 0
 
         def copy_to_root(src: Path, dst: Path):
+            nonlocal diff_count
             if not dst.parent.exists():
                 logging.debug(
                     f"making parent dir {dst.parent} for copy to root")
                 check_call(f"/usr/bin/sudo /usr/bin/mkdir -p {dst.parent}")
             logging.info(f"copying changed file {src} -> {dst}")
             check_call(
-                f"/usr/bin/sudo /usr/bin/cp --preserve=mode {src} {dst}", shell=True)
+                f"/usr/bin/sudo /usr/bin/cp --preserve=mode,timestamps {src} {dst}", shell=True)
             diff_count += 1
 
         self.remove_root_files()

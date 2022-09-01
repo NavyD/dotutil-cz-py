@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from subprocess import check_call
 from sys import stderr
 
 # import util
@@ -48,7 +49,8 @@ def main():
                 "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
             if has_changed(root_path, path):
                 logging.info(f"copying changed file {root_path} -> {path}")
-                shutil.copyfile(root_path, path)
+                check_call(
+                    f"/usr/bin/sudo /usr/bin/cp --preserve=mode,timestamps {root_path} {path}", shell=True)
                 count += 1
 
     logging.info(f"found changed {count} files")
