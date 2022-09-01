@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from pathlib import Path
-from subprocess import check_call
+from subprocess import check_call, check_output
 
 
 class SetupExcetion(Exception):
@@ -11,9 +11,14 @@ class SetupExcetion(Exception):
 def get_digest(path: Path) -> str:
     h = hashlib.sha256()
     buf = memoryview(bytearray(128 * 1024))
-    with open(path, "rb", buffering=0) as f:
-        while n := f.readinto(buf):
-            h.update(buf[:n])
+    try:
+        with open(path, "rb", buffering=0) as f:
+            while n := f.readinto(buf):
+                h.update(buf[:n])
+    except PermissionError:
+        logging.warning(f"try using sudo to read file {path} without read permission")
+        s = check_output(f'/usr/bin/sudo /usr/bin/cat {path}', shell=True)
+        h.update(s)
     return h.hexdigest()
 
 
