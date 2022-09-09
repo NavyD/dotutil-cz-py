@@ -38,6 +38,7 @@ def main():
     MAPPED_ROOT_DIR = Path.home().joinpath(".root")
 
     if not MAPPED_ROOT_DIR.exists():
+        logging.info(f"skipped copy mapped root is not dir: {MAPPED_ROOT_DIR}")
         return
     elif MAPPED_ROOT_DIR.is_file():
         raise SetupExcetion(f"mapped root is not dir: {MAPPED_ROOT_DIR}")

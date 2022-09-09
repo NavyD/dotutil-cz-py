@@ -17,9 +17,6 @@ from util import SetupExcetion, config_log, has_changed
 
 class SyncRoot:
     def __init__(self, mapped_root: Path, rootlist_path: Path) -> None:
-        if not mapped_root.exists() or mapped_root.is_file():
-            raise SetupExcetion(f"mapped root is not dir: {mapped_root}")
-
         self.mapped_root = mapped_root
         self.rootlist_path = rootlist_path
         self.log = logging.getLogger(__name__)
@@ -141,8 +138,13 @@ rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
 level = logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR
 config_log(level=level)
 
-try:
-    SyncRoot(MAPPED_ROOT_DIR, rootlist_path).sync()
-except SetupExcetion as e:
-    logging.error(f"{e}")
-    exit(1)
+if MAPPED_ROOT_DIR.is_file():
+    try:
+        SyncRoot(MAPPED_ROOT_DIR, rootlist_path).sync()
+    except SetupExcetion as e:
+        logging.error(f"{e}")
+        exit(1)
+else:
+    logging.info(f"skipped apply. mapped root is not dir: {MAPPED_ROOT_DIR}")
+
+exit(0)
