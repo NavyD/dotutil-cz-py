@@ -34,9 +34,10 @@ def has_changed(src: Path, dst: Path) -> bool:
     return s.st_mode != d.st_mode or get_digest(src) != get_digest(dst)
 
 
-def config_log(level=logging.CRITICAL):
+def config_log(level=logging.CRITICAL, stream=None):
     logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
                         level=level,
+                        stream=stream,
                         datefmt='%Y-%m-%d %H:%M:%S')
 
 
