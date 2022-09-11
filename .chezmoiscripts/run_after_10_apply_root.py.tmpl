@@ -4,11 +4,11 @@ import os
 import sys
 from pathlib import Path
 from subprocess import check_call
-from sys import stderr, stdin
+from sys import stdin
 from typing import Set
 
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import SetupExcetion, config_log, has_changed
+from util import SetupExcetion, config_log, has_changed  # noqa: E402
 
 """
 在chezmoi更新.root文件后比较/root并应用到/root中
@@ -133,18 +133,18 @@ class SyncRoot:
         self.save_rootlist()
 
 
-MAPPED_ROOT_DIR = Path('{{joinPath .chezmoi.homeDir ".root"}}')
-rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
-level = logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR
-config_log(level=level)
+if __name__ == "__main__":
+    MAPPED_ROOT_DIR = Path('{{joinPath .chezmoi.homeDir ".root"}}')
+    rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
+    level = logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR  # noqa: E501
+    config_log(level=level)
 
-if MAPPED_ROOT_DIR.is_file():
-    try:
-        SyncRoot(MAPPED_ROOT_DIR, rootlist_path).sync()
-    except SetupExcetion as e:
-        logging.error(f"{e}")
-        exit(1)
-else:
-    logging.info(f"skipped apply. mapped root is not dir: {MAPPED_ROOT_DIR}")
-
-exit(0)
+    if MAPPED_ROOT_DIR.is_dir():
+        try:
+            SyncRoot(MAPPED_ROOT_DIR, rootlist_path).sync()
+        except SetupExcetion as e:
+            logging.error(f"{e}")
+            exit(1)
+    else:
+        logging.info(
+            f"skipped apply. mapped root is not dir: {MAPPED_ROOT_DIR}")
