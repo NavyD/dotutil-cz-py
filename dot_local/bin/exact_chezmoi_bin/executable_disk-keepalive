@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+
+import argparse
+import logging
+import os
+from datetime import datetime, timedelta
+from time import sleep
+
+from psutil import disk_io_counters, disk_partitions
+
+
+class Keeper:
+    """
+    让磁盘保持活动一段时间后再休眠。
+
+    当前实现由于usb机械硬盘无法使用hdparm管理，只能通过写文件的方式保持硬盘活动
+
+    当硬盘活动时不会写文件，否则在一段时间内没有发现io时主动写入文件保持活动，
+    在长时间没有io后停止写文件将自动休眠
+    """
+
+    def __init__(self, path, idle_interval, alive_interval) -> None:
+        self.log = logging.getLogger(__name__)
+        self.keepalive_count = 0
+
+        self.interval = 1
+
+        self.idle_interval = timedelta(seconds=idle_interval)
+        self.alive_interval = timedelta(seconds=alive_interval)
+
+        self.path = path
+
+        # get disk dev name and mount path
+        devinfos = [(disk.device, path.lstrip(disk.mountpoint)) for disk in disk_partitions(
+        ) if path.startswith(disk.mountpoint) and disk.mountpoint != "/"]
+        # find min
+        devs = [os.path.basename(x[0]) for x in sorted(
+            devinfos, key=lambda s: len(s[1]))]
+        if not devs or (len(devs) > 1 and len(devs[0]) == len(devs[1])):
+            raise Exception(f"invalid devices for path {path}: {devs}")
+        self.dev = devs[0]
+        self.log.info(f"found device {self.dev} for {path}")
+
+    def keepalive(self):
+        # no buf
+        with open(self.path, 'wb', buffering=0) as f:
+            self.keepalive_count += 1
+            count = self.get_io_count()
+            self.log.info(
+                f"keeping alive {self.keepalive_count} for io {count}")
+            f.write(bytearray(self.keepalive_count))
+
+    def run(self):
+        is_idle = False
+        last_time = datetime.min
+        start_time = datetime.min
+        last_count = self.get_io_count()
+        self.log.info(
+            f"running alive service with idle interval {self.idle_interval.seconds}, alive interval {self.alive_interval.seconds}")
+        while True:
+            count = self.get_io_count()
+            now = datetime.now()
+            if count > last_count:
+                # ignore io in alive_interval
+                if now > (last_time + self.alive_interval):
+                    self.log.debug(f"found effective new io count {count}")
+                    start_time = now
+                    last_time = now
+                    is_idle = False
+            else:
+                # too idle
+                if now > (start_time + self.idle_interval):
+                    if not is_idle:
+                        self.log.info(
+                            f"idle waitting {self.idle_interval.seconds}")
+                    is_idle = True
+                # keep alive interval
+                elif now > (last_time + self.alive_interval):
+                    self.keepalive()
+                    last_time = datetime.now()
+            sleep(self.interval)
+            last_count = count
+
+    def get_io_count(self):
+        stats = disk_io_counters(perdisk=True)[self.dev]
+        return stats.read_count + stats.write_count
+
+
+if __name__ == "__main__":
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
+                        level=logging.INFO,
+                        datefmt='%Y-%m-%d %H:%M:%S')
+    parser = argparse.ArgumentParser(description='Optional app description')
+    parser.add_argument('-i', '--idle-interval', type=int, required=True,)
+    parser.add_argument('-a', '--alive-interval', type=int, required=True,)
+    parser.add_argument(
+        'path', type=str, help='to write the file for keepalive the disk')
+    args = parser.parse_args()
+
+    if not args.idle_interval or not args.alive_interval or not args.path:
+        raise Exception(f"has empty args: {args}")
+
+    o = Keeper(args.path, args.idle_interval, args.alive_interval)
+    o.run()
