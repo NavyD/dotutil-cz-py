@@ -1,3 +1,4 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env python3
 import hashlib
 import logging
@@ -65,3 +66,4 @@ try:
 except SetupExcetion as e:
     logging.error(f"{e}", file=stderr)
     exit(1)
+{{ end -}}

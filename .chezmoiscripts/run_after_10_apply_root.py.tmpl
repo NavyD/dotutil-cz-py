@@ -1,3 +1,4 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env python3
 import logging
 import os
@@ -148,3 +149,5 @@ if __name__ == "__main__":
     else:
         logging.info(
             f"skipped apply. mapped root is not dir: {MAPPED_ROOT_DIR}")
+
+{{ end -}}

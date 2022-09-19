@@ -1,3 +1,4 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env python3
 
 def preimport(st: str):
@@ -120,3 +121,4 @@ def setup_source(mirrors=[
     # TODO: 输出到pipe再使用sudo tee写入
     check_call(f'cat /dev/stdin', shell=True)
     pass
+{{ end -}}
