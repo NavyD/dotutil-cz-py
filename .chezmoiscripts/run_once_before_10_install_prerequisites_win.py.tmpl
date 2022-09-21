@@ -1,0 +1,114 @@
+import logging
+import sys
+from shutil import which
+from subprocess import check_call, check_output
+from typing import List
+
+# import util
+sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
+from util import config_log  # noqa: E402
+
+
+def install_winget(pkgs: List[str], ipkgs: List[str]):
+    name = 'winget'
+    if not which(name):
+        raise Exception(f'not found {name} in PATH')
+
+    logging.debug('getting winget install list')
+    txt = check_output(f'{name} list'.split()).decode('utf8')
+
+    ipkgs_un = [p for p in ipkgs if p not in txt]
+    logging.info(
+        f'installing interactive winget uninstalled {len(ipkgs_un)} packages for orignal {len(ipkgs)} packages: {" ".join(ipkgs_un)}')
+    for pkg in ipkgs_un:
+        check_call(f'{name} install -i {pkg}')
+
+    pkgs_un = [p for p in pkgs if p not in txt]
+    logging.info(
+        f'installing winget uninstalled {len(pkgs_un)} packages for orignal {len(pkgs)} packages: {" ".join(pkgs_un)}')
+    for pkg in pkgs_un:
+        check_call(f'{name} install {pkg}')
+
+
+def setup_scoop(pkgs: List[str]):
+    # [Scoop A command-line installer for Windows](https://scoop.sh/)
+    if not which('scoop'):
+        logging.info('installing scoop')
+        # [Scoop (un)installer](https://github.com/ScoopInstaller/Install)
+        stat = """
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+irm get.scoop.sh | iex
+
+scoop bucket add extras
+scoop bucket add nerd-fonts
+"""
+        check_call(['powershell.exe', '-c', stat])
+
+    # Only need to run once, this setting is persistent.
+    if not which('gsudo'):
+        # [Credentials Cache](https://gerardog.github.io/gsudo/docs/credentials-cache)
+        check_call('gsudo config CacheMode Auto'.split())
+    # -u: disable update scoop when install
+    check_call(['powershell.exe', '-c', f'scoop install -u {" ".join(pkgs)}'])
+
+
+winget_pkgs = [
+    # https://gitforwindows.org/
+    'Git.Git',
+    # [7-Zip is a file archiver with a high compression ratio.](https://www.7-zip.org/)
+    '7zip.7zip',
+    # 自动写入 keepassxc dep [System Error: VCRUNTIME140_1.dll was not found #7564](https://github.com/keepassxreboot/keepassxc/issues/7564#issuecomment-1074842970)
+    # 'Microsoft.VC++2017Redist-x64',
+    # [KeePassXC is a cross-platform community-driven port of the Windows application “Keepass Password Safe”.](https://github.com/keepassxreboot/keepassxc)
+    'KeePassXCTeam.KeePassXC',
+    # [The 7-Zip derivative intended for the modern Windows experience](https://github.com/M2Team/NanaZip)
+    'M2Team.NanaZip',
+    # [Bring macOS “Quick Look” feature to Windows](https://github.com/QL-Win/QuickLook)
+    'QL-Win.QuickLook',
+    'Google.Chrome',
+    # [SPACEDESK DRIVER SOFTWARE for Windows PRIMARY PC (server)](https://www.spacedesk.net/)
+    'Datronicsoft.SpacedeskDriver.Server',
+    # Restart to take effect [A lightweight utility which can automatically switch the display state of the Windows Taskbar.](https://github.com/ChanpleCai/SmartTaskbar)
+    'chanplecai.smarttaskbar',
+    # [Automatically switches between the dark and light theme of Windows 10 and Windows 11](https://github.com/AutoDarkMode/Windows-Auto-Night-Mode)
+    'Armin2208.WindowsAutoNightMode',
+    'Telegram.TelegramDesktop',
+    # [A lightweight utility that makes the Windows taskbar translucent/transparent](https://github.com/TranslucentTB/TranslucentTB)
+    '9PF4KZ2VN4W9',
+    # [Snip& Paste Snipaste is a simple but powerful snipping tool, and also allows you to pin the screenshot back onto the screen](https://www.snipaste.com/)
+    '9P1WXPKB68KX',
+]
+
+winget_i_pkgs = [
+    # 自定义右键菜单
+    'Microsoft.VisualStudioCode',
+    # 自定义安装位置和选择ffmp
+    # [ScreenToGif allows you to record a selected area of your screen, edit and save it as a gif or video.](https://github.com/NickeManarin/ScreenToGif)
+    'NickeManarin.ScreenToGif',
+]
+
+scoop_pkgs = [
+    'chezmoi',
+    # [Scoop can utilize aria2 to use multi-connection downloads](https://github.com/ScoopInstaller/Scoop#multi-connection-downloads-with-aria2)
+    'aria2',
+    'gsudo',  # [A Sudo for Windows](https://github.com/gerardog/gsudo)
+    # [This is a fun, new monospaced font that includes programming ligatures and is designed to enhance the modern look and feel of the Windows Terminal.](https://github.com/microsoft/cascadia-code)
+    'Cascadia-Code',
+    # nerd-fonts [Iconic font aggregator, collection, & patcher. 3,600+ icons, 50+ patched fonts: Hack, Source Code Pro, more. Glyph collections: Font Awesome, Material Design Icons, Octicons, & more](https://github.com/ryanoasis/nerd-fonts)
+    'Meslo-NF',
+    # [A bash inspired readline implementation for PowerShell](https://github.com/PowerShell/PSReadLine)
+    'PSReadLine',
+    # [Efficient and Fast, Small and Portable.](https://geekuninstaller.com/)
+    'geekuninstaller',
+    # [Foreign language reading and translation assistant based on copy and translate.](https://github.com/CopyTranslator/CopyTranslator)
+    'CopyTranslator',  # winget安装后异常，无法卸载，使用scoop安装
+    # [ohmyposh Windows Set up your terminal](https://ohmyposh.dev/docs/installation/windows#installation)
+    'oh-my-posh',
+]
+
+
+if __name__ == '__main__':
+    config_log(
+        level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+    install_winget(winget_pkgs, winget_i_pkgs)
+    setup_scoop(scoop_pkgs)
