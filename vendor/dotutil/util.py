@@ -19,7 +19,7 @@ def get_digest(path: Path) -> str:
     except PermissionError:
         logging.warning(
             f"try using sudo to read file {path} without read permission")
-        s = check_output(f'/usr/bin/sudo /usr/bin/cat {path}', shell=True)
+        s = check_output(f'sudo cat {path}'.split())
         h.update(s)
     return h.hexdigest()
 

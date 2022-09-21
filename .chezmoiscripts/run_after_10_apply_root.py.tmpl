@@ -59,7 +59,7 @@ class SyncRoot:
                 raise SetupExcetion(f"invalid path {path}")
 
             self.log.info(f"removing {path}")
-            check_call(f"/usr/bin/sudo /usr/bin/rm -rf {path}", shell=True)
+            check_call(f"sudo rm -rf {path}".split())
 
         removed_files = self.get_removed_mapped_files()
         if not removed_files:
@@ -99,10 +99,10 @@ class SyncRoot:
             if not dst.parent.exists():
                 logging.debug(
                     f"making parent dir {dst.parent} for copy to root")
-                check_call(f"/usr/bin/sudo /usr/bin/mkdir -p {dst.parent}")
+                check_call(f"sudo mkdir -p {dst.parent}".split())
             logging.info(f"copying changed file {src} -> {dst}")
             check_call(
-                f"/usr/bin/sudo /usr/bin/cp --preserve=mode,timestamps {src} {dst}", shell=True)
+                f"sudo cp --preserve=mode,timestamps {src} {dst}".split())
             diff_count += 1
 
         def backup_at_first(path: Path):
@@ -112,7 +112,7 @@ class SyncRoot:
             logging.info(
                 f"backing up {path} to {backup_path} when first applied")
             check_call(
-                f"/usr/bin/sudo /usr/bin/cp -p {path} {backup_path}", shell=True)
+                f"sudo cp -p {path} {backup_path}".split())
 
         self.remove_root_files()
 
