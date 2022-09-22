@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from shutil import which
 from subprocess import check_call, check_output
@@ -77,6 +78,10 @@ winget_pkgs = [
     '9PF4KZ2VN4W9',
     # [Snip& Paste Snipaste is a simple but powerful snipping tool, and also allows you to pin the screenshot back onto the screen](https://www.snipaste.com/)
     '9P1WXPKB68KX',
+    # https://im.qq.com/index
+    'Tencent.QQ',
+    # [微信 Windows 版](https://windows.weixin.qq.com/)
+    'Tencent.WeChat',
 ]
 
 winget_i_pkgs = [
@@ -85,6 +90,8 @@ winget_i_pkgs = [
     # 自定义安装位置和选择ffmp
     # [ScreenToGif allows you to record a selected area of your screen, edit and save it as a gif or video.](https://github.com/NickeManarin/ScreenToGif)
     'NickeManarin.ScreenToGif',
+    # 选择默认音乐等 https://m.music.163.com
+    'NetEase.CloudMusic',
 ]
 
 scoop_pkgs = [
@@ -110,5 +117,9 @@ scoop_pkgs = [
 if __name__ == '__main__':
     config_log(
         level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+    # C:\Program Files\KeePassXC
+    if 'keepassxc' not in os.environ['PATH'].lower():
+        logging.error('not found KeePassXC in PATH. please run `$env:Path = "$env:ProgramFiles\\KeePassXC;$env:Path"`')
+        exit(1)
     install_winget(winget_pkgs, winget_i_pkgs)
     setup_scoop(scoop_pkgs)
