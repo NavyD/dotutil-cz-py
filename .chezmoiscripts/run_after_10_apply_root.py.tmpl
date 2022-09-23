@@ -135,7 +135,7 @@ if __name__ == "__main__":
     # {{- if eq .chezmoi.os "windows" }}
     MAPPED_ROOT_DIR = Path(r'{{joinPath .chezmoi.homeDir ".root"}}')
     rootlist_path = Path(r'{{joinPath .chezmoi.cacheDir ".root"}}')
-    # {{- else -}}
+    # {{- else }}
     MAPPED_ROOT_DIR = Path('{{joinPath .chezmoi.homeDir ".root"}}')
     rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
     # {{- end }}
