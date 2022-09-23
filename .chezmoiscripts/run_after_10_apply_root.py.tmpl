@@ -8,7 +8,8 @@ from sys import stdin
 from typing import Set
 
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import SetupExcetion, config_log, has_changed  # noqa: E402
+from util import (SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
+                  has_changed)
 
 """
 在chezmoi更新.root文件后比较/root并应用到/root中
@@ -22,7 +23,7 @@ class SyncRoot:
         self.log = logging.getLogger(__name__)
 
     def root_path(self, path) -> Path:
-        return Path("/").joinpath(os.path.relpath(path, self.mapped_root))
+        return Path("/").joinpath(os.path.relpath(path, self.mapped_root)).absolute()
 
     def get_removed_mapped_files(self) -> Set[Path]:
         files = set()
@@ -58,8 +59,12 @@ class SyncRoot:
             elif path == Path("/"):
                 raise SetupExcetion(f"invalid path {path}")
 
-            self.log.info(f"removing {path}")
-            check_call(f"sudo rm -rf {path}".split())
+            if os.name == 'nt':
+                cmd = f'gsudo del {path}'
+            else:
+                cmd = f"sudo rm -rf {path}"
+            self.log.info(f"removing {path} with command: {cmd}")
+            check_call(cmd.split())
 
         removed_files = self.get_removed_mapped_files()
         if not removed_files:
@@ -96,13 +101,7 @@ class SyncRoot:
 
         def copy_to_root(src: Path, dst: Path):
             nonlocal diff_count
-            if not dst.parent.exists():
-                logging.debug(
-                    f"making parent dir {dst.parent} for copy to root")
-                check_call(f"sudo mkdir -p {dst.parent}".split())
-            logging.info(f"copying changed file {src} -> {dst}")
-            check_call(
-                f"sudo cp --preserve=mode,timestamps {src} {dst}".split())
+            elevate_copy_file(src, dst)
             diff_count += 1
 
         def backup_at_first(path: Path):
@@ -111,8 +110,7 @@ class SyncRoot:
                 return
             logging.info(
                 f"backing up {path} to {backup_path} when first applied")
-            check_call(
-                f"sudo cp -p {path} {backup_path}".split())
+            elevate_copy_file(path, backup_path)
 
         self.remove_root_files()
 
@@ -134,8 +132,13 @@ class SyncRoot:
 
 
 if __name__ == "__main__":
+    # {{- if eq .chezmoi.os "windows" }}
+    MAPPED_ROOT_DIR = Path(r'{{joinPath .chezmoi.homeDir ".root"}}')
+    rootlist_path = Path(r'{{joinPath .chezmoi.cacheDir ".root"}}')
+    # {{- else -}}
     MAPPED_ROOT_DIR = Path('{{joinPath .chezmoi.homeDir ".root"}}')
     rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
+    # {{- end }}
     level = logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR  # noqa: E501
     config_log(level=level)
 
@@ -146,5 +149,5 @@ if __name__ == "__main__":
             logging.error(f"{e}")
             exit(1)
     else:
-        logging.info(
+        logging.warn(
             f"skipped apply. mapped root is not dir: {MAPPED_ROOT_DIR}")

@@ -1,13 +1,16 @@
 import logging
 import os
+import shutil
 import sys
+from pathlib import Path
 from shutil import which
 from subprocess import check_call, check_output
 from typing import List
+from urllib.parse import urlparse
 
 # import util
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import config_log  # noqa: E402
+from util import config_log, download_file  # noqa: E402
 
 
 def install_winget(pkgs: List[str], ipkgs: List[str]):
@@ -15,7 +18,7 @@ def install_winget(pkgs: List[str], ipkgs: List[str]):
     if not which(name):
         raise Exception(f'not found {name} in PATH')
 
-    logging.debug('getting winget install list')
+    logging.info('getting winget install list')
     txt = check_output(f'{name} list'.split()).decode('utf8')
 
     ipkgs_un = [p for p in ipkgs if p not in txt]
@@ -53,6 +56,36 @@ scoop bucket add nerd-fonts
     check_call(['powershell.exe', '-c', f'scoop install -u {" ".join(pkgs)}'])
 
 
+def dl_everythingpowertoys(version='0.61.1'):
+    """
+    external不支持这个zip解压：lzma格式问题
+    """
+    url = f'https://github.com/lin-ycv/EverythingPowerToys/releases/download/v{version}/Everything-{version}-x64.zip'
+    dst = Path(r'{{.chezmoi.homeDir}}').joinpath(
+        ".root/Program Files/PowerToys/modules/launcher/Plugins")
+    old_dst = dst.joinpath('Everything')
+    if old_dst.is_dir():
+        logging.info(f'removing old dir: {old_dst}')
+        shutil.rmtree(old_dst)
+
+    cache_path = Path('{{.chezmoi.cacheDir }}').joinpath(
+        Path(urlparse(url).path).name)
+    if not cache_path.exists():
+        logging.info(f'downloading to {cache_path} from {url}')
+        with open(cache_path, 'wb+') as f:
+            download_file(url, f)
+
+    # winget install nanazip
+    cmd = ['C:\\Users\\navyd\\AppData\\Local\\Microsoft\\WindowsApps\\7z.exe',
+           'x', f'-o{dst}', '-y', str(cache_path)]
+    logging.info(
+        f'decompressing {cache_path} to {dst} with command `{" ".join(cmd)}`')
+    check_call(cmd)
+
+    # logging.info(f'removing {cache_path}')
+    # os.remove(cache_path)
+
+
 winget_pkgs = [
     # https://gitforwindows.org/
     'Git.Git',
@@ -82,6 +115,8 @@ winget_pkgs = [
     'Tencent.QQ',
     # [微信 Windows 版](https://windows.weixin.qq.com/)
     'Tencent.WeChat',
+    # [Windows system utilities to maximize productivity](https://github.com/microsoft/PowerToys)
+    'Microsoft.PowerToys',
 ]
 
 winget_i_pkgs = [
@@ -119,7 +154,9 @@ if __name__ == '__main__':
         level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
     # C:\Program Files\KeePassXC
     if 'keepassxc' not in os.environ['PATH'].lower():
-        logging.error('not found KeePassXC in PATH. please run `$env:Path = "$env:ProgramFiles\\KeePassXC;$env:Path"`')
+        logging.error(
+            'not found KeePassXC in PATH. please run `$env:Path = "$env:ProgramFiles\\KeePassXC;$env:Path"`')
         exit(1)
     install_winget(winget_pkgs, winget_i_pkgs)
     setup_scoop(scoop_pkgs)
+    dl_everythingpowertoys()

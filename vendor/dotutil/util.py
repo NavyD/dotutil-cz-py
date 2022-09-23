@@ -1,8 +1,10 @@
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
-from subprocess import check_output
+from subprocess import PIPE, check_call, check_output, run
+from urllib.request import urlopen
 
 
 class SetupExcetion(Exception):
@@ -43,3 +45,35 @@ def config_log(level=logging.CRITICAL, stream=None):
 
 def chezmoi_data(cz_path='chezmoi'):
     return json.loads(check_output(f'{cz_path} data --format json'.split(), text=True))
+
+
+def is_windows():
+    return os.name == 'nt'
+
+
+def elevate_copy_file(src: Path, dst: Path):
+    # [How do I check if I'm running on Windows in Python? [duplicate]](https://stackoverflow.com/a/1325587/8566831)
+    if is_windows():
+        # [How to preserve file attributes when one copies files in Windows?](https://superuser.com/a/1326224)
+        cmd = ['gsudo', 'robocopy', str(src.parent), str(
+            dst.parent), str(src.name), '/COPY:DT', '/R:0']
+    else:
+        cmd = f'sudo cp --preserve=mode,timestamps {src} {dst}'
+        if not dst.parent.exists():
+            check_call(f"sudo mkdir -p {dst.parent}".split())
+
+    logging.info(
+        f'copying file {src} -> {dst}')
+    res = run(cmd, stdout=PIPE, text=True)
+    logging.debug(f'`{" ".join(cmd)}` output: {res.stdout}')
+    if not is_windows() or res.returncode not in range(0, 8):
+        # https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy#exit-return-codes
+        res.check_returncode()
+
+
+def download_file(url, file):
+    CHUNK = 10 * 1024
+    logging.info(f'downloading to {file.name} from {url}')
+    response = urlopen(url)
+    while chunk := response.read(CHUNK):
+        file.write(chunk)

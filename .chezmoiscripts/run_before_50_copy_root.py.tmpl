@@ -3,12 +3,12 @@ import logging
 import os
 import sys
 from pathlib import Path
-from subprocess import check_call
 from sys import stderr
 
 # import util
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import SetupExcetion, config_log, has_changed  # noqa: E402
+from util import (SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
+                  has_changed)
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root
@@ -48,18 +48,18 @@ def main():
                 "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
             if has_changed(root_path, path):
                 logging.info(f"copying changed file {root_path} -> {path}")
-                check_call(
-                    f"sudo cp --preserve=mode,timestamps {root_path} {path}".split())
+                elevate_copy_file(root_path, path)
                 count += 1
 
     logging.info(f"found changed {count} files")
 
 
-config_log(
-    level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+if __name__ == '__main__':
+    config_log(
+        level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
 
-try:
-    main()
-except SetupExcetion as e:
-    logging.error(f"{e}", file=stderr)
-    exit(1)
+    try:
+        main()
+    except SetupExcetion as e:
+        logging.error(f"{e}", file=stderr)
+        exit(1)
