@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ def install_winget(pkgs: List[str], ipkgs: List[str]):
         check_call(f'{name} install {pkg}')
 
 
-def setup_scoop(pkgs: List[str]):
+def setup_scoop(pkgs: List[str], global_pkgs: List[str]):
     # [Scoop A command-line installer for Windows](https://scoop.sh/)
     if not which('scoop'):
         logging.info('installing scoop')
@@ -48,12 +49,21 @@ scoop bucket add nerd-fonts
 """
         check_call(['powershell.exe', '-c', stat])
 
+    logging.info(f'installing scoop {len(pkgs)} pkgs')
+    # -u: disable update scoop when install
+    check_call(['powershell.exe', '-c', f'scoop install {" ".join(pkgs)}'])
     # Only need to run once, this setting is persistent.
     if not which('gsudo'):
+        raise Exception('not found gsudo for elevate permission')
+
+    if not re.search(r'^CacheMode\s*=\s*"Auto"\s+\(global\)$', check_output(['gsudo', 'config'], text=True), re.MULTILINE):
+        logging.info('config gsudo CacheMode')
         # [Credentials Cache](https://gerardog.github.io/gsudo/docs/credentials-cache)
         check_call('gsudo config CacheMode Auto'.split())
-    # -u: disable update scoop when install
-    check_call(['powershell.exe', '-c', f'scoop install -u {" ".join(pkgs)}'])
+
+    logging.info(f'installing scoop global {len(global_pkgs)} pkgs with gsudo')
+    # install global pkgs with gsudo
+    check_call(['gsudo', 'scoop', 'install', '-g'] + global_pkgs)
 
 
 def dl_everythingpowertoys(version='0.61.1'):
@@ -68,7 +78,7 @@ def dl_everythingpowertoys(version='0.61.1'):
         logging.info(f'removing old dir: {old_dst}')
         shutil.rmtree(old_dst)
 
-    cache_path = Path('{{.chezmoi.cacheDir }}').joinpath(
+    cache_path = Path(r'{{.chezmoi.cacheDir | osClean}}').joinpath(
         Path(urlparse(url).path).name)
     if not cache_path.exists():
         logging.info(f'downloading to {cache_path} from {url}')
@@ -127,6 +137,16 @@ winget_pkgs = [
     'voidtools.Everything',
     # [Windows system utilities to maximize productivity](https://github.com/microsoft/PowerToys)
     'Microsoft.PowerToys',
+    # [miui+ Beta手机电脑之间 协作无间](https://plus.miui.com/)
+    'Xiaomi.MIUI+',
+    # [Raspberry Pi Imaging Utility](https://github.com/raspberrypi/rpi-imager)
+    'RaspberryPiFoundation.RaspberryPiImager',
+    # [VLC 是一款自由、开源的跨平台多媒体播放器及框架，可播放大多数多媒体文件，以及 DVD、音频 CD、VCD 及各类流媒体协议。](https://www.videolan.org/)
+    'VideoLAN.VLC',
+    'EpicGames.EpicGamesLauncher',
+    'Valve.Steam',
+    'SoftDeluxe.FreeDownloadManager',
+    # dev env #########
 ]
 
 winget_i_pkgs = [
@@ -137,6 +157,11 @@ winget_i_pkgs = [
     'NickeManarin.ScreenToGif',
     # 选择默认音乐等 https://m.music.163.com
     'NetEase.CloudMusic',
+    # 安装WHP 激活YF390-0HF8P-M81RQ-2DXQE-M2UT6。 [VMware Workstation Pro 是行业标准桌面 Hypervisor，使用它可在 Windows 或 Linux 桌面上运行 Windows、Linux 和 BSD 虚拟机。](https://www.vmware.com/cn/products/workstation-pro.html)
+    # 为何不用virtualbox：在linux桌面太卡，无法有效使用gpu
+    'VMware.WorkstationPro',
+    # 写入当前用户 not provide access to additional cross-targets like rustup does. [rust Standalone installers](https://forge.rust-lang.org/infra/other-installation-methods.html#standalone-installers)
+    'Rustlang.Rustup',
 ]
 
 scoop_pkgs = [
@@ -144,10 +169,6 @@ scoop_pkgs = [
     # [Scoop can utilize aria2 to use multi-connection downloads](https://github.com/ScoopInstaller/Scoop#multi-connection-downloads-with-aria2)
     'aria2',
     'gsudo',  # [A Sudo for Windows](https://github.com/gerardog/gsudo)
-    # [This is a fun, new monospaced font that includes programming ligatures and is designed to enhance the modern look and feel of the Windows Terminal.](https://github.com/microsoft/cascadia-code)
-    'Cascadia-Code',
-    # nerd-fonts [Iconic font aggregator, collection, & patcher. 3,600+ icons, 50+ patched fonts: Hack, Source Code Pro, more. Glyph collections: Font Awesome, Material Design Icons, Octicons, & more](https://github.com/ryanoasis/nerd-fonts)
-    'Meslo-NF',
     # [A bash inspired readline implementation for PowerShell](https://github.com/PowerShell/PSReadLine)
     'PSReadLine',
     # [Efficient and Fast, Small and Portable.](https://geekuninstaller.com/)
@@ -156,8 +177,26 @@ scoop_pkgs = [
     'CopyTranslator',  # winget安装后异常，无法卸载，使用scoop安装
     # [ohmyposh Windows Set up your terminal](https://ohmyposh.dev/docs/installation/windows#installation)
     'oh-my-posh',
+    'curl',
+
+    # scoop checkup: install apps
+    # [Innounp is a console application, and it uses command-line options to find out what to do](https://innounp.sourceforge.net/)
+    'innounp',
+    # [The WiX toolset lets developers create installers for Windows Installer, the Windows installation engine.](https://wixtoolset.org/)
+    'wixtoolset',
 ]
 
+scoop_global_pkgs = [
+    # global install: -g #################
+    # [This is a fun, new monospaced font that includes programming ligatures and is designed to enhance the modern look and feel of the Windows Terminal.](https://github.com/microsoft/cascadia-code)
+    'Cascadia-Code',
+    # nerd-fonts [Iconic font aggregator, collection, & patcher. 3,600+ icons, 50+ patched fonts: Hack, Source Code Pro, more. Glyph collections: Font Awesome, Material Design Icons, Octicons, & more](https://github.com/ryanoasis/nerd-fonts)
+    'Meslo-NF',
+    # [安装 Nerd Font](https://learn.microsoft.com/zh-cn/windows/terminal/tutorials/custom-prompt-setup#install-a-nerd-font)
+    # [ryanoasis/nerd-fonts Why Caskaydia Cove and not Cascadia Code?](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/CascadiaCode)
+    # [scoop CascadiaCode-NF-Mono.json](https://github.com/matthewjberger/scoop-nerd-fonts/blob/master/bucket/CascadiaCode-NF-Mono.json)
+    'CascadiaCode-NF',
+]
 
 if __name__ == '__main__':
     config_log(
@@ -168,5 +207,5 @@ if __name__ == '__main__':
             'not found KeePassXC in PATH. please run `$env:Path = "$env:ProgramFiles\\KeePassXC;$env:Path"`')
         exit(1)
     install_winget(winget_pkgs, winget_i_pkgs)
-    setup_scoop(scoop_pkgs)
+    setup_scoop(scoop_pkgs, scoop_global_pkgs)
     dl_everythingpowertoys()
