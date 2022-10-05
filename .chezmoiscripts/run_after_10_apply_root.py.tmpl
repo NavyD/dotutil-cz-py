@@ -9,7 +9,7 @@ from typing import Set
 
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
 from util import (SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
-                  has_changed)
+                  has_changed, is_windows)
 
 """
 在chezmoi更新.root文件后比较/root并应用到/root中
@@ -59,7 +59,7 @@ class SyncRoot:
             elif path == Path("/"):
                 raise SetupExcetion(f"invalid path {path}")
 
-            if os.name == 'nt':
+            if is_windows():
                 cmd = f'gsudo del {path}'
             else:
                 cmd = f"sudo rm -rf {path}"
@@ -104,14 +104,6 @@ class SyncRoot:
             elevate_copy_file(src, dst)
             diff_count += 1
 
-        def backup_at_first(path: Path):
-            backup_path = path.with_name(f'{path.name}.backup')
-            if backup_path.exists():
-                return
-            logging.info(
-                f"backing up {path} to {backup_path} when first applied")
-            elevate_copy_file(path, backup_path)
-
         self.remove_root_files()
 
         for path in self.mapped_root.rglob("*"):
@@ -121,7 +113,6 @@ class SyncRoot:
                     copy_to_root(path, root_path)
                 elif root_path.is_file():
                     if has_changed(path, root_path):
-                        backup_at_first(root_path)
                         copy_to_root(path, root_path)
                 else:
                     raise SetupExcetion(f"invalid file {root_path}")
