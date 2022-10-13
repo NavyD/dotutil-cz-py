@@ -175,10 +175,13 @@ scoop_pkgs = [
     'geekuninstaller',
     # [Foreign language reading and translation assistant based on copy and translate.](https://github.com/CopyTranslator/CopyTranslator)
     'CopyTranslator',  # winget安装后异常，无法卸载，使用scoop安装
-    # https://starship.rs/guide/#%F0%9F%9A%80-installation
+    # [The minimal, blazing-fast, and infinitely customizable prompt for any shell!](https://starship.rs/guide/#%F0%9F%9A%80-installation)
     'starship',
+    # [Curl is a command-line tool for transferring data specified with URL syntax.](https://github.com/curl/curl)
     'curl',
-
+    # 注意：使用scoop安装比winget msstore的更好，环境变量会自动配置。其它源没有scripts目录，winget源没有python3链接
+    # [Python is a programming language that lets you work quickly and integrate systems more effectively](https://www.python.org/)
+    'python',
 
     # scoop checkup: install apps
     # [Innounp is a console application, and it uses command-line options to find out what to do](https://innounp.sourceforge.net/)
@@ -197,6 +200,9 @@ scoop_global_pkgs = [
     # [ryanoasis/nerd-fonts Why Caskaydia Cove and not Cascadia Code?](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/CascadiaCode)
     # [scoop CascadiaCode-NF-Mono.json](https://github.com/matthewjberger/scoop-nerd-fonts/blob/master/bucket/CascadiaCode-NF-Mono.json)
     'CascadiaCode-NF',
+    # [Sarasa Gothic / 更纱黑体 / 更紗黑體 / 更紗ゴシック / 사라사 고딕](https://github.com/be5invis/Sarasa-Gothic)
+    # [中文等宽字体（Monospace Chinese Font Family）](https://leonvision.online/technology/monospace-chinese-font-family/)
+    'SarasaGothic-ttc',  # or `SarasaGothic-SC`
 ]
 
 if __name__ == '__main__':
