@@ -130,7 +130,7 @@ if __name__ == "__main__":
     MAPPED_ROOT_DIR = Path('{{joinPath .chezmoi.homeDir ".root"}}')
     rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
     # {{- end }}
-    level = logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR  # noqa: E501
+    level = logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR  # noqa: E501
     config_log(level=level)
 
     if MAPPED_ROOT_DIR.is_dir():

@@ -56,7 +56,7 @@ def main():
 
 if __name__ == '__main__':
     config_log(
-        level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+        level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
 
     try:
         main()
