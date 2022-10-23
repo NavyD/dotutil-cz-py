@@ -77,3 +77,29 @@ def download_file(url, file):
     response = urlopen(url)
     while chunk := response.read(CHUNK):
         file.write(chunk)
+
+
+def dyn_import(st: str):
+    """
+    [Dynamic import: How to import * from module name from variable?](https://stackoverflow.com/a/44492879/8566831)
+    [Installing python module within code](https://stackoverflow.com/a/24773951/8566831)
+    [How to install and import Python modules at runtime?](https://stackoverflow.com/a/45375636/8566831)
+    [exec (builtImportString, sys._getframe(1).f_globals)](https://github.com/ryanniehaus/impstall/blob/e28207f30f4041cb6ad6596151cb90f7d8a4197c/impstall/core.py#L182)
+    [Using pip from your program](https://pip.pypa.io/en/latest/user_guide/#using-pip-from-your-program)
+    """
+    import re
+    import sys
+    pat = re.compile(r'^\s*(from|import)\s+(\w+)')
+    if not pat.match(st):
+        st = f'import {st}'
+    try:
+        exec(st, sys._getframe(1).f_globals)
+    except ModuleNotFoundError:
+        import subprocess
+        m = pat.search(st)
+        package = m.group(2)
+        if not package:
+            raise Exception(f'not found package for statement: {st}')
+        subprocess.check_call(
+            f'{sys.executable} -m pip install {package}', shell=True)
+        exec(st, sys._getframe(1).f_globals)
