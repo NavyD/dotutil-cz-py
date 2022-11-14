@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+import logging
+import os
+import sys
+from pathlib import Path
+from subprocess import PIPE, check_call, run
+
+# import util
+sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
+from util import config_log  # noqa: E402
+
+
+def is_restored(path: Path):
+    try:
+        return (path.is_dir() and not next(os.scandir(path), None)) or (not path.exists())
+    except PermissionError:
+        proc = run(['sudo', 'ls', '-A', str(path)], stdout=PIPE)
+        return proc.returncode != 0 or not proc.stdout
+
+
+RESTIC_SRC_PATHS = set([
+    # {{- range $rule := .restic.restore_paths }}
+    '{{.}}',
+    # {{- end}}
+])
+TARGET_PATH = "/"
+CHACHE_LIST_PATH = '{{joinPath .chezmoi.cacheDir ".restic-restored.list"}}'
+
+if __name__ == "__main__":
+    config_log(
+        level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+
+    # {{- if and (env "RESTIC_PASSWORD" | not) (not .has_keepass) }}
+    logging.warning('skipped restic restore: not found restic password')
+    # {{- else }}
+
+    if not RESTIC_SRC_PATHS:
+        logging.info('skipped restic restore: empty src paths')
+        exit(0)
+
+    cache_file = Path(CHACHE_LIST_PATH)
+    restored_paths = set()
+    if cache_file.is_file():
+        restored_paths = set(
+            line.strip() for line in cache_file.read_text().splitlines() if line.strip())
+        logging.info(
+            f'loaded restored {len(restored_paths)} paths from {cache_file}')
+    else:
+        logging.warning(
+            f'cache file {cache_file} not found b will restore all {len(RESTIC_SRC_PATHS)} paths')
+
+    restic_path = '{{.restic.path}}'
+    env = os.environ.copy()
+    env['RESTIC_REPOSITORY'] = '{{.restic.repo}}'
+    #   {{- if env "RESTIC_PASSWORD" | not }}
+    env['RESTIC_PASSWORD'] = '{{- list . "restic-repo" "Password" | includeTemplate "kp-get" -}}'
+    #   {{- end }}
+
+    logging.info(
+        f'restic restore to {len(RESTIC_SRC_PATHS)} paths: {" ".join(RESTIC_SRC_PATHS)}')
+    append_paths = set()
+    for p in RESTIC_SRC_PATHS:
+        path = Path(p)
+        if p in restored_paths:
+            logging.debug(f'skip restored path {p}')
+        else:
+            if not is_restored(path):
+                # 确认是否恢复当前已存在的目录
+                logging.warning(f'overwriting {path} is not empty')
+                skipped = False
+                skip_forever = False
+                while True:
+                    s = input(
+                        f'overwriting {path} is not empty: [skip-forever|sf,skip,yes,quit]')
+                    if s == 'skip':
+                        skipped = True
+                        break
+                    elif s == 'yes':
+                        break
+                    elif s == 'quit':
+                        logging.info(f'exiting in {path}')
+                        exit(1)
+                    elif s in ['skip-forever', 'sf']:
+                        skip_forever = True
+                        break
+                    else:
+                        pass
+                if skipped:
+                    logging.debug(f'skipped overwriting {path}')
+                    continue
+
+            if not skip_forever:
+                args = ['sudo', '-E', restic_path, 'restore', '--target', TARGET_PATH, '--path', '/', '--host',
+                        '{{.chezmoi.hostname}}', '--include', p, 'latest']
+                logging.debug(
+                    f'restoring to {TARGET_PATH} from restic {p} with command args `{" ".join(args)}`')
+                check_call(args, env=env)
+            else:
+                logging.info(f'skipped forever restore {path}')
+
+            append_paths.add(p)
+
+    if append_paths:
+        logging.debug(
+            f'append writing to {cache_file} for content: {" ".join(append_paths)}')
+        with open(cache_file, 'a+') as f:
+            for line in append_paths:
+                f.write(f'{line}\n')
+
+    logging.info(
+        f'restored {len(append_paths)} paths to {cache_file}')
+    # {{- end }}
