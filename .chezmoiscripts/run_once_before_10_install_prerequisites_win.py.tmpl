@@ -1,14 +1,17 @@
 import logging
 import os
 import re
+import shutil
 import sys
+from pathlib import Path
 from shutil import which
 from subprocess import check_call, check_output
 from typing import List
+from urllib.parse import urlparse
 
 # import util
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import config_log  # noqa: E402
+from util import config_log, download_file  # noqa: E402
 
 
 def install_winget(pkgs: List[str], ipkgs: List[str]):
@@ -63,6 +66,41 @@ scoop bucket add nerd-fonts
     check_call(['gsudo', 'scoop', 'install', '-g'] + global_pkgs)
 
 
+# {{- $eptoys_ver := (gitHubLatestRelease "lin-ycv/EverythingPowerToys").TagName | trimPrefix "v" }}
+def dl_everythingpowertoys(version='{{$eptoys_ver}}'):
+    """
+    external不支持这个zip解压：lzma格式问题
+    """
+    url = f'https://github.com/lin-ycv/EverythingPowerToys/releases/download/v{version}/Everything-{version}-x64.zip'
+    dst = '{{.chezmoi.homeDir}}/.root/Program Files/PowerToys/modules/launcher/Plugins/Everything'
+
+    dst = Path(dst)
+    # WARN: 在V0.65.0开始zip包不含Everything文件夹，不再需要stripComponent
+    # old_dst = dst.joinpath('Everything')
+    old_dst = dst
+    if old_dst.is_dir():
+        logging.info(f'removing old dir: {old_dst}')
+        shutil.rmtree(old_dst)
+
+    cache_path = Path(r'{{.chezmoi.cacheDir | osClean}}').joinpath(
+        Path(urlparse(url).path).name)
+    if not cache_path.exists():
+        logging.info(f'downloading to {cache_path} from {url}')
+        with open(cache_path, 'wb+') as f:
+            download_file(url, f)
+
+    # winget install nanazip
+    # cmd = ['C:\\Users\\navyd\\scoop\\shims\\7z.exe',
+    cmd = ['C:\\Users\\navyd\\AppData\\Local\\Microsoft\\WindowsApps\\7z.exe',
+           'x', f'-o{dst}', '-y', str(cache_path)]
+    logging.info(
+        f'decompressing {cache_path} to {dst} with command `{" ".join(cmd)}`')
+    check_call(cmd)
+
+    # logging.info(f'removing {cache_path}')
+    # os.remove(cache_path)
+
+
 winget_pkgs = [
     # https://gitforwindows.org/
     'Git.Git',
@@ -114,6 +152,8 @@ winget_pkgs = [
     'Valve.Steam',
     'SoftDeluxe.FreeDownloadManager',
     # dev env #########
+    # [A faster, better and more stable redis desktop manager [GUI client], compatible with Linux, Windows, Mac. What's more, it won't crash when loading massive keys.](https://github.com/qishibo/AnotherRedisDesktopManager)
+    'qishibo.AnotherRedisDesktopManager',
 ]
 
 winget_i_pkgs = [
@@ -188,3 +228,4 @@ if __name__ == '__main__':
         exit(1)
     install_winget(winget_pkgs, winget_i_pkgs)
     setup_scoop(scoop_pkgs, scoop_global_pkgs)
+    dl_everythingpowertoys()

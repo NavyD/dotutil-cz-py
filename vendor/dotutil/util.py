@@ -64,8 +64,8 @@ def elevate_copy_file(src: Path, dst: Path):
 
     logging.info(
         f'copying file {src} -> {dst}')
-    res = run(cmd, stdout=PIPE, text=True)
-    logging.debug(f'`{" ".join(cmd)}` output: {res.stdout}')
+    res = run(cmd, stdout=PIPE)
+    logging.debug(f'`{" ".join(cmd)}` output: {res.stdout.decode(errors="ignore")}')
     if not is_windows() or res.returncode not in range(0, 8):
         # https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy#exit-return-codes
         res.check_returncode()

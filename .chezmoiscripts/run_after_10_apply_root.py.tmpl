@@ -39,6 +39,7 @@ class SyncRoot:
             self.log.debug(f"found root list path {self.rootlist_path}")
             readfiles(self.rootlist_path)
 
+        self.log.debug(f'loaded {len(files)} files in rootlist {self.rootlist_path}')
         return files
 
     def save_rootlist(self):
@@ -55,23 +56,27 @@ class SyncRoot:
     def remove_root_files(self):
         def rm(path: Path):
             if not path.exists():
-                self.log.warning(f"not found root file {path}")
+                self.log.warning(f"ignore not found root file {path}")
+                return
             elif path == Path("/"):
                 raise SetupExcetion(f"invalid path {path}")
 
             if is_windows():
-                cmd = f'gsudo del {path}'
+                cmd = ['gsudo', 'del', str(path)]
             else:
-                cmd = f"sudo rm -rf {path}"
-            self.log.info(f"removing {path} with command: {cmd}")
-            check_call(cmd.split())
+                cmd = ['sudo', 'rm', '-rf', str(path)]
+            self.log.info(f'removing {path} with command: {" ".join(cmd)}')
+            check_call(cmd)
 
         removed_files = self.get_removed_mapped_files()
+        removed_files = [p for p in removed_files if p.exists()]
         if not removed_files:
             self.log.debug("empty removed files")
             return
+        logging.info(f"found removal {len(removed_files)} files")
+        logging.debug(
+            f'removing root files: {", ".join([ str(p) for p in removed_files])}')
 
-        logging.info(f"found removal files for root: {removed_files}")
         remove_all = False
         for path in removed_files:
             root_file = self.root_path(path)
