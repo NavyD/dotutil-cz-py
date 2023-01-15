@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from subprocess import PIPE, check_call, check_output, run
+from subprocess import PIPE, CalledProcessError, check_call, check_output, run
 from urllib.request import urlopen
 
 
@@ -18,10 +18,14 @@ def get_digest(path: Path) -> str:
         with open(path, "rb", buffering=0) as f:
             while n := f.readinto(buf):
                 h.update(buf[:n])
-    except PermissionError:
+    except PermissionError as e:
         logging.warning(
             f"try using sudo to read file {path} without read permission")
-        s = check_output(f'sudo cat {path}'.split())
+        try:
+            s = check_output(f'sudo --non-interactive cat {path}'.split(), stderr=PIPE)
+        except CalledProcessError as e1:
+            logging.warning(f'failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}')
+            raise e
         h.update(s)
     return h.hexdigest()
 

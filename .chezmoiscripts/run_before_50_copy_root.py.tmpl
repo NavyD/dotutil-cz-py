@@ -46,11 +46,15 @@ def main():
         if path.is_file():
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
-            if has_changed(root_path, path):
+            changed = None
+            try:
+                changed = has_changed(root_path, path)
+            except PermissionError:
+                logging.error(f'skipped copying file {path} for permission error')
+            if changed:
                 logging.info(f"copying changed file {root_path} -> {path}")
                 elevate_copy_file(root_path, path)
                 count += 1
-
     logging.info(f"found changed {count} files")
 
 
