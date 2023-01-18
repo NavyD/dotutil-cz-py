@@ -117,7 +117,13 @@ class SyncRoot:
                 if not root_path.exists():
                     copy_to_root(path, root_path)
                 elif root_path.is_file():
-                    if has_changed(path, root_path):
+                    changed = None
+                    try:
+                        changed = has_changed(path, root_path)
+                    except PermissionError as e:
+                        self.log.error(f'Checking for changes fails with permission issues on files {path} -> {root_path}: {e}')
+                        raise SetupExcetion(e)
+                    if changed:
                         copy_to_root(path, root_path)
                 else:
                     raise SetupExcetion(f"invalid file {root_path}")

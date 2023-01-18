@@ -19,12 +19,12 @@ def get_digest(path: Path) -> str:
             while n := f.readinto(buf):
                 h.update(buf[:n])
     except PermissionError as e:
-        logging.warning(
+        logging.info(
             f"try using sudo to read file {path} without read permission")
         try:
             s = check_output(f'sudo --non-interactive cat {path}'.split(), stderr=PIPE)
         except CalledProcessError as e1:
-            logging.warning(f'failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}')
+            logging.warning(f'failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}. Please enter password with sudo in advance')
             raise e
         h.update(s)
     return h.hexdigest()
