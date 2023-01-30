@@ -25,14 +25,28 @@ RESTIC_SRC_PATHS = set([
 ])
 TARGET_PATH = "/"
 CHACHE_LIST_PATH = '{{joinPath .chezmoi.cacheDir ".restic-restored.list"}}'
+HAS_RESTIC = False
+RESTIC_REPOSITORY = None
+RESTIC_PASSWORD = os.environ.get('RESTIC_PASSWORD', None)
+RESTIC_BIN_PATH = None
+
+# {{- if .has_restic }}
+RESTIC_BIN_PATH = '{{.restic.path}}'
+HAS_RESTIC = True
+RESTIC_REPOSITORY = '{{.restic.repo}}'
+#   {{- if .has_keepass }}
+RESTIC_PASSWORD = '{{- list . "restic-repo" "Password" | includeTemplate "kp-get" -}}'
+#   {{- end }}
+# {{- end }}
 
 if __name__ == "__main__":
+
     config_log(
         level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
 
-    # {{- if and (env "RESTIC_PASSWORD" | not) (not .has_keepass) }}
-    logging.warning('skipped restic restore: not found restic password')
-    # {{- else }}
+    if not HAS_RESTIC or not RESTIC_PASSWORD:
+        logging.warning('skipped restic restore: not found restic password')
+        exit(0)
 
     if not RESTIC_SRC_PATHS:
         logging.info('skipped restic restore: empty src paths')
@@ -49,12 +63,10 @@ if __name__ == "__main__":
         logging.warning(
             f'cache file {cache_file} not found b will restore all {len(RESTIC_SRC_PATHS)} paths')
 
-    restic_path = '{{.restic.path}}'
+    restic_path = RESTIC_BIN_PATH
     env = os.environ.copy()
-    env['RESTIC_REPOSITORY'] = '{{.restic.repo}}'
-    #   {{- if env "RESTIC_PASSWORD" | not }}
-    env['RESTIC_PASSWORD'] = '{{- list . "restic-repo" "Password" | includeTemplate "kp-get" -}}'
-    #   {{- end }}
+    env['RESTIC_REPOSITORY'] = RESTIC_REPOSITORY
+    env['RESTIC_PASSWORD'] = RESTIC_PASSWORD
 
     logging.info(
         f'restic restore to {len(RESTIC_SRC_PATHS)} paths: {" ".join(RESTIC_SRC_PATHS)}')
@@ -109,4 +121,3 @@ if __name__ == "__main__":
 
     logging.info(
         f'restored {len(append_paths)} paths to {cache_file}')
-    # {{- end }}
