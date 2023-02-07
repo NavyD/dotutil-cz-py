@@ -23,7 +23,7 @@ class Keeper:
         self.log = logging.getLogger(__name__)
         self.keepalive_count = 0
 
-        self.interval = 1
+        self.interval = 5
 
         self.idle_interval = timedelta(seconds=idle_interval)
         self.alive_interval = timedelta(seconds=alive_interval)
