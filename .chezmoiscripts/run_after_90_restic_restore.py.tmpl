@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+import logging
+import os
+import sys
+from pathlib import Path
+from subprocess import PIPE, check_call, run
+
+# import util
+sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
+from util import config_log  # noqa: E402
+
+
+def is_restored(path: Path):
+    try:
+        return (path.is_dir() and next(os.scandir(path), None)) or path.is_file()
+    except PermissionError:
+        proc = run(['sudo', 'ls', '-A', str(path)], stdout=PIPE)
+        return proc.returncode == 0 and proc.stdout
+
+
+RESTIC_SRC_PATHS = set([
+    # {{- range $rule := .restic.restore_paths }}
+    '{{.}}',
+    # {{- end}}
+])
+TARGET_PATH = "/"
+HAS_RESTIC = False
+RESTIC_REPOSITORY = None
+RESTIC_PASSWORD = os.environ.get('RESTIC_PASSWORD', None)
+RESTIC_BIN_PATH = None
+
+# {{- if .has_restic }}
+RESTIC_BIN_PATH = '{{.restic.path}}'
+HAS_RESTIC = True
+RESTIC_REPOSITORY = '{{.restic.repo}}'
+#   {{- if .has_keepass }}
+RESTIC_PASSWORD = '{{- list . "restic-repo" "Password" | includeTemplate "kp-get" -}}'
+#   {{- end }}
+# {{- end }}
+
+if __name__ == "__main__":
+
+    config_log(
+        level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+
+    if not HAS_RESTIC or not RESTIC_PASSWORD:
+        logging.warning('skipped restic restore: not found restic password')
+        exit(0)
+
+    if not RESTIC_SRC_PATHS:
+        logging.info('skipped restic restore: empty src paths')
+        exit(0)
+
+    restic_path = RESTIC_BIN_PATH
+    env = os.environ.copy()
+    env['RESTIC_REPOSITORY'] = RESTIC_REPOSITORY
+    env['RESTIC_PASSWORD'] = RESTIC_PASSWORD
+
+    logging.debug(
+        f'restic restore to {len(RESTIC_SRC_PATHS)} paths: {" ".join(RESTIC_SRC_PATHS)}')
+    for p in RESTIC_SRC_PATHS:
+        path = Path(p)
+        if is_restored(path):
+            logging.debug(f'skip restored path {p}')
+        else:
+            args = ['sudo', '-E', restic_path, 'restore', '--target', TARGET_PATH, '--host',
+                    '{{.chezmoi.hostname}}', '--include', p, 'latest']
+            logging.info(
+                f'restoring to {TARGET_PATH} from restic {p} with command args `{" ".join(args)}`')
+            check_call(args, env=env)
+    
