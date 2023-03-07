@@ -34,7 +34,7 @@ RESTIC_BIN_PATH = '{{.restic.path}}'
 HAS_RESTIC = True
 RESTIC_REPOSITORY = '{{.restic.repo}}'
 #   {{- if .has_keepass }}
-RESTIC_PASSWORD = '{{- list . "restic-repo" "Password" | includeTemplate "kp-get" -}}'
+RESTIC_PASSWORD = '{{- passhole "dotfiles/restic-repo" "Password" -}}'
 #   {{- end }}
 # {{- end }}
 
