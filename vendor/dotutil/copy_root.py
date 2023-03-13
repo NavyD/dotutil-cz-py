@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 import logging
 import os
+import sys
 from pathlib import Path
 from sys import stderr
-import sys
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
-from util import (ChezmoiArgs, SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
-                  has_changed)
+from util import (ChezmoiArgs, SetupExcetion, config_log,  # noqa: E402
+                  elevate_copy_file, has_changed)
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root
@@ -32,21 +32,19 @@ from util import (ChezmoiArgs, SetupExcetion, config_log, elevate_copy_file,  # 
 """
 
 
-def main():
-    MAPPED_ROOT_DIR = Path.home().joinpath(".root")
-
-    if not MAPPED_ROOT_DIR.exists():
-        logging.info(f"skipped copy mapped root is not dir: {MAPPED_ROOT_DIR}")
+def copy_root(mapped_root_dir: Path):
+    if not mapped_root_dir.exists():
+        logging.info(f"skipped copy mapped root is not dir: {mapped_root_dir}")
         return
-    elif MAPPED_ROOT_DIR.is_file():
-        raise SetupExcetion(f"mapped root is not dir: {MAPPED_ROOT_DIR}")
+    elif mapped_root_dir.is_file():
+        raise SetupExcetion(f"mapped root is not dir: {mapped_root_dir}")
 
-    logging.info(f'copying root to {MAPPED_ROOT_DIR} if changed')
+    logging.info(f'copying root to {mapped_root_dir} if changed')
     count = 0
-    for path in MAPPED_ROOT_DIR.rglob("*"):
+    for path in mapped_root_dir.rglob("*"):
         if path.is_file():
             root_path = Path(
-                "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
+                "/").joinpath(os.path.relpath(path, mapped_root_dir))
             logging.debug(f'checking changed: {path} and {root_path}')
             changed = None
             try:
@@ -72,8 +70,15 @@ if __name__ == '__main__':
     config_log(level=level)
     logging.info(f'parsed chezmoi {args.__dict__} for args `{s}`')
 
-    try:
-        main()
-    except SetupExcetion as e:
-        logging.error(f"{e}", file=stderr)
-        exit(1)
+    mapped_root_dir = Path.home().joinpath(".root")
+
+    target_paths = args.target_paths()
+    if target_paths and all(mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths):
+        logging.info(
+            f'skipped copy root to {mapped_root_dir} for target paths: {target_paths}')
+    else:
+        try:
+            copy_root(mapped_root_dir)
+        except SetupExcetion as e:
+            logging.error(f"{e}", file=stderr)
+            exit(1)

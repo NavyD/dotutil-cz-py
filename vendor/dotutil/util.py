@@ -2,8 +2,8 @@ import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import re
+from pathlib import Path
 from subprocess import PIPE, CalledProcessError, check_call, check_output, run
 from urllib.request import urlopen
 
@@ -44,9 +44,11 @@ def has_changed(src: Path, dst: Path) -> bool:
 
 
 def config_log(level=logging.CRITICAL, stream=None):
-    # logging.basicConfig(format='{asctime}.{msecs:<03} [{levelname:4}] [{pathname}:{name}.{funcName}]: {message}',
+    # logging.basicConfig(format='{asctime}.{msecs:<10f} [{levelname:4}] [{pathname}:{name}.{funcName}]: {message}',
     # style='{',
-    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-5s] [%(pathname)s:%(name)s.%(funcName)s]: %(message)s',
+    # [Python logging.Formatter(): is there any way to fix the width of a field and justify it left/right?](https://stackoverflow.com/questions/20618570/python-logging-formatter-is-there-any-way-to-fix-the-width-of-a-field-and-jus)
+    # TODO: fixed width for long pathname
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-5s] [%(name)s.%(funcName)s]: %(message)s',
                         level=level,
                         stream=stream,
                         datefmt='%Y-%m-%d %H:%M:%S')
