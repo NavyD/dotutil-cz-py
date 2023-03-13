@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 from subprocess import PIPE, CalledProcessError, check_call, check_output, run
 from urllib.request import urlopen
 
@@ -22,9 +23,11 @@ def get_digest(path: Path) -> str:
         logging.info(
             f"try using sudo to read file {path} without read permission")
         try:
-            s = check_output(f'sudo --non-interactive cat {path}'.split(), stderr=PIPE)
+            s = check_output(
+                f'sudo --non-interactive cat {path}'.split(), stderr=PIPE)
         except CalledProcessError as e1:
-            logging.warning(f'failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}. Please enter password with sudo in advance')
+            logging.warning(
+                f'failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}. Please enter password with sudo in advance')
             raise e
         h.update(s)
     return h.hexdigest()
@@ -41,7 +44,9 @@ def has_changed(src: Path, dst: Path) -> bool:
 
 
 def config_log(level=logging.CRITICAL, stream=None):
-    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
+    # logging.basicConfig(format='{asctime}.{msecs:<03} [{levelname:4}] [{pathname}:{name}.{funcName}]: {message}',
+    # style='{',
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-5s] [%(pathname)s:%(name)s.%(funcName)s]: %(message)s',
                         level=level,
                         stream=stream,
                         datefmt='%Y-%m-%d %H:%M:%S')
@@ -62,14 +67,16 @@ def elevate_copy_file(src: Path, dst: Path):
         cmd = ['gsudo', 'robocopy', str(src.parent), str(
             dst.parent), str(src.name), '/COPY:DT', '/R:0']
     else:
-        cmd = f'sudo cp --preserve=links,mode,timestamps --no-dereference {src} {dst}'.split()
+        cmd = f'sudo cp --preserve=links,mode,timestamps --no-dereference {src} {dst}'.split(
+        )
         if not dst.parent.exists():
             check_call(f"sudo mkdir -p {dst.parent}".split())
 
     logging.info(
         f'copying file {src} -> {dst}')
     res = run(cmd, stdout=PIPE)
-    logging.debug(f'`{" ".join(cmd)}` output: {res.stdout.decode(errors="ignore")}')
+    logging.debug(
+        f'`{" ".join(cmd)}` output: {res.stdout.decode(errors="ignore")}')
     if not is_windows() or res.returncode not in range(0, 8):
         # https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy#exit-return-codes
         res.check_returncode()
@@ -107,3 +114,34 @@ def dyn_import(st: str):
         subprocess.check_call(
             f'{sys.executable} -m pip install {package}', shell=True)
         exec(st, sys._getframe(1).f_globals)
+
+
+class ChezmoiArgs:
+    def __init__(self, s: str) -> None:
+        if not s:
+            raise SetupExcetion('empty args')
+        if m := re.compile(r'^(.*?chezmoi)\s+(--?\w+(\s+)?)*((\w+(-\w+)?)\s+?(--?\w+(\s+)?)*)?(.*)$').match(s):
+            self._global_opts = m.group(2)
+            self._subcommand = m.group(5)
+            self._sub_opts = m.group(7)
+            self._target = m.group(9)
+        else:
+            raise SetupExcetion(f'failed to parse chezmoi args: {s}')
+
+    def has_debug(self) -> bool:
+        return self._global_opts and '--debug' in self._global_opts
+
+    def has_verbose(self) -> bool:
+        if not self._sub_opts:
+            return False
+        opts = self._sub_opts.split()
+        if any(v in opts for v in ['-v', '--verbose']):
+            return True
+        pat = re.compile(r'^-\w*v')
+        return any(pat.match(v) for v in opts)
+
+    def subcommand(self) -> str:
+        return self._subcommand
+
+    def target_paths(self) -> list[Path]:
+        return [Path(s) for s in self._target.split()]

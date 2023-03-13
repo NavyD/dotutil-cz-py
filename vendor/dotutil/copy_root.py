@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import logging
 import os
-import sys
 from pathlib import Path
 from sys import stderr
+import sys
 
-# import util
-sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import (SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
+sys.path.append(str(
+    Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
+from util import (ChezmoiArgs, SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
                   has_changed)
 
 """
@@ -41,16 +41,19 @@ def main():
     elif MAPPED_ROOT_DIR.is_file():
         raise SetupExcetion(f"mapped root is not dir: {MAPPED_ROOT_DIR}")
 
+    logging.info(f'copying root to {MAPPED_ROOT_DIR} if changed')
     count = 0
     for path in MAPPED_ROOT_DIR.rglob("*"):
         if path.is_file():
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, MAPPED_ROOT_DIR))
+            logging.debug(f'checking changed: {path} and {root_path}')
             changed = None
             try:
                 changed = has_changed(root_path, path)
             except PermissionError:
-                logging.error(f'skipped copying file {path} for permission error')
+                logging.error(
+                    f'skipped copying file {path} for permission error')
             if changed:
                 logging.info(f"copying changed file {root_path} -> {path}")
                 elevate_copy_file(root_path, path)
@@ -59,8 +62,15 @@ def main():
 
 
 if __name__ == '__main__':
-    config_log(
-        level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
+    level = logging.ERROR
+    s = os.environ['CHEZMOI_ARGS']
+    args = ChezmoiArgs(s)
+    if args.has_debug():
+        level = logging.DEBUG
+    elif args.has_verbose():
+        level = logging.INFO
+    config_log(level=level)
+    logging.info(f'parsed chezmoi {args.__dict__} for args `{s}`')
 
     try:
         main()

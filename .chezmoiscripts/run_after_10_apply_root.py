@@ -7,8 +7,9 @@ from subprocess import check_call
 from sys import stdin
 from typing import Set
 
-sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import (SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
+sys.path.append(
+    str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
+from util import (ChezmoiArgs, SetupExcetion, config_log, elevate_copy_file,  # noqa: E402
                   has_changed, is_windows)
 
 """
@@ -39,7 +40,8 @@ class SyncRoot:
             self.log.debug(f"found root list path {self.rootlist_path}")
             readfiles(self.rootlist_path)
 
-        self.log.debug(f'loaded {len(files)} files in rootlist {self.rootlist_path}')
+        self.log.debug(
+            f'loaded {len(files)} files in rootlist {self.rootlist_path}')
         return files
 
     def save_rootlist(self):
@@ -121,7 +123,8 @@ class SyncRoot:
                     try:
                         changed = has_changed(path, root_path)
                     except PermissionError as e:
-                        self.log.error(f'Checking for changes fails with permission issues on files {path} -> {root_path}: {e}')
+                        self.log.error(
+                            f'Checking for changes fails with permission issues on files {path} -> {root_path}: {e}')
                         raise SetupExcetion(e)
                     if changed:
                         copy_to_root(path, root_path)
@@ -134,22 +137,34 @@ class SyncRoot:
 
 
 if __name__ == "__main__":
-    # {{- if eq .chezmoi.os "windows" }}
-    MAPPED_ROOT_DIR = Path(r'{{joinPath .chezmoi.homeDir ".root"}}')
-    rootlist_path = Path(r'{{joinPath .chezmoi.cacheDir ".root"}}')
-    # {{- else }}
-    MAPPED_ROOT_DIR = Path('{{joinPath .chezmoi.homeDir ".root"}}')
-    rootlist_path = Path('{{joinPath .chezmoi.cacheDir ".root"}}')
-    # {{- end }}
-    level = logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR  # noqa: E501
+    level = logging.ERROR
+    args = ChezmoiArgs(os.environ['CHEZMOI_ARGS'])
+    if args.has_debug():
+        level = logging.DEBUG
+    elif args.has_verbose():
+        level = logging.INFO
     config_log(level=level)
 
-    if MAPPED_ROOT_DIR.is_dir():
+    mapped_root_dir = Path(os.environ['CHEZMOI_HOME_DIR']).joinpath('.root')
+    rootlist_path = Path(os.environ['CHEZMOI_CACHE_DIR']).joinpath('.root')
+
+    target_paths = args.target_paths()
+    if not mapped_root_dir.is_dir():
+        print(
+            f"apply error: mapped root is not dir: {mapped_root_dir}")
+        exit(1)
+    elif args.subcommand() != 'apply':
+        logging.info(f'skipped apply for subcommand: {args.subcommand()}')
+    # only run once when apply post and run script
+    elif not target_paths and Path(__file__).name.startswith('run_after_'):
+        logging.info('skipped apply for chezmoi scripts')
+    # target is not a sub path or self of mapped root
+    elif target_paths and all(mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths):
+        logging.info(
+            f'skipped apply non mapped root {mapped_root_dir} in target paths: {target_paths}')
+    else:
         try:
-            SyncRoot(MAPPED_ROOT_DIR, rootlist_path).sync()
+            SyncRoot(mapped_root_dir, rootlist_path).sync()
         except SetupExcetion as e:
             logging.error(f"{e}")
             exit(1)
-    else:
-        logging.warning(
-            f"skipped apply. mapped root is not dir: {MAPPED_ROOT_DIR}")
