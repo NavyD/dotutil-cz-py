@@ -6,7 +6,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from shutil import which
-from subprocess import DEVNULL, Popen, TimeoutExpired, check_call, check_output
+from subprocess import (DEVNULL, CalledProcessError, Popen, TimeoutExpired,
+                        check_call, check_output)
 from typing import Set
 
 # import util
@@ -27,14 +28,27 @@ def install_winget(pkgs: Set[str], ipkgs: Set[str]):
     logging.info(
         f'installing interactive winget uninstalled {len(ipkgs_un)} packages for orignal {len(ipkgs)} packages: {" ".join(ipkgs_un)}')
     for pkg in ipkgs_un:
-        check_call([name, 'install', '--no-upgrade', '--interactive', pkg])
-
+        try:
+            check_call([name, 'install', '--no-upgrade', '--interactive', pkg])
+        except CalledProcessError as e:
+            # 已安装包版本。已取消安装: Command 'winget install --no-upgrade --interactive NetEase.CloudMusic' returned non-zero exit status 2316632161.
+            if e.returncode == 2316632161:
+                continue
+            else:
+                raise e
     logging.info(f'checking {len(pkgs)} packages if installed')
     pkgs_un = pkgs - winget_installed(pkgs)
     logging.info(
         f'installing winget uninstalled {len(pkgs_un)} packages for orignal {len(pkgs)} packages: {" ".join(pkgs_un)}')
     for pkg in pkgs_un:
-        check_call([name, 'install', '--no-upgrade', '--silent', pkg])
+        try:
+            check_call([name, 'install', '--no-upgrade', '--silent', pkg])
+        except CalledProcessError as e:
+            if e.returncode == 2316632161:
+                logging.debug(f'skipped installed package {name}')
+                continue
+            else:
+                raise e
 
 
 def winget_install_windows_exporter():
