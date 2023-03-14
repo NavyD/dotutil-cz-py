@@ -1,69 +1,133 @@
 import logging
+import multiprocessing
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from shutil import which
-from subprocess import check_call, check_output
-from typing import List
+from subprocess import DEVNULL, Popen, TimeoutExpired, check_call, check_output
+from typing import Set
 
 # import util
-sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
-from util import config_log  # noqa: E402
+sys.path.append(
+    str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
+from util import ChezmoiArgs, config_log  # noqa: E402
+
+POOL = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() + 1)
 
 
-def install_winget(pkgs: List[str], ipkgs: List[str]):
+def install_winget(pkgs: Set[str], ipkgs: Set[str]):
     name = 'winget'
     if not which(name):
         raise Exception(f'not found {name} in PATH')
 
-    logging.info('getting winget install list')
-    txt = check_output(f'{name} list'.split()).decode('utf8')
-
-    ipkgs_un = [p for p in ipkgs if p not in txt]
+    logging.info(f'checking interactive {len(ipkgs)} packages if installed')
+    ipkgs_un = ipkgs - winget_installed(ipkgs)
     logging.info(
         f'installing interactive winget uninstalled {len(ipkgs_un)} packages for orignal {len(ipkgs)} packages: {" ".join(ipkgs_un)}')
     for pkg in ipkgs_un:
-        check_call(f'{name} install -i {pkg}')
+        check_call([name, 'install', '--no-upgrade', '--interactive', pkg])
 
-    pkgs_un = [p for p in pkgs if p not in txt]
+    logging.info(f'checking {len(pkgs)} packages if installed')
+    pkgs_un = pkgs - winget_installed(pkgs)
     logging.info(
         f'installing winget uninstalled {len(pkgs_un)} packages for orignal {len(pkgs)} packages: {" ".join(pkgs_un)}')
     for pkg in pkgs_un:
-        check_call(f'{name} install {pkg}')
+        check_call([name, 'install', '--no-upgrade', '--silent', pkg])
 
 
-def setup_scoop(pkgs: List[str], global_pkgs: List[str]):
+def winget_install_windows_exporter():
+    # [Prometheus exporter for Windows machines](https://github.com/prometheus-community/windows_exporter)
+    name = 'Prometheus.WMIExporter'
+    if winget_installed({name}):
+        return
+    logging.info('installing windows_exporter')
+
+    # windows_exporter msi安装使用配置文件时要求其存在，否则无法安装成功一直阻塞重启进程，可查看event viewer日志
+    config_path = 'C:\\Program Files\\windows_exporter\\config.yml'
+    logging.info(
+        f'creating empty config file for windows_exporter if {config_path} not exists')
+    check_call(['gsudo', 'python3', '-c',
+                f'''from pathlib import Path; Path("{config_path}").touch();'''])
+
+    # https://github.com/prometheus-community/windows_exporter#installation
+    check_call(['winget',
+                'install',
+                '--id',
+                name,
+                # msi参数
+                '--override',
+                f'EXTRA_FLAGS="--config.file=""{config_path}"""'
+                ])
+
+
+def winget_installed(pkgs: Set[str], wait_timeout=5) -> Set[str]:
+    """
+    并发winget list -q 进程查询每个pkg是否已安装并返回安装的pkg。
+    """
+    def wait_status(a):
+        (name, p) = a
+        try:
+            if not p.wait(wait_timeout):
+                return name
+        except TimeoutExpired:
+            p.kill()
+        return None
+
+    pkgs = list(pkgs)
+    res = set()
+    step = POOL._max_workers
+    # 限制一次启动太多过程
+    for names in [pkgs[x:x + step] for x in range(0, len(pkgs), step)]:
+        procs = [(name, Popen(['winget', 'list', '-q', name], stdout=DEVNULL))
+                 for name in names]
+        res.update(pkg for pkg in POOL.map(wait_status, procs) if pkg)
+    return res
+
+
+def setup_scoop(pkgs: Set[str], global_pkgs: Set[str]):
     # [Scoop A command-line installer for Windows](https://scoop.sh/)
     if not which('scoop'):
         logging.info('installing scoop')
         # [Scoop (un)installer](https://github.com/ScoopInstaller/Install)
-        stat = """
+        check_call(['powershell.exe', '-c', """
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm get.scoop.sh | iex
 
 scoop bucket add extras
 scoop bucket add nerd-fonts
 """
-        check_call(['powershell.exe', '-c', stat])
+                    ])
 
-    logging.info(f'installing scoop {len(pkgs)} pkgs')
-    # -u: disable update scoop when install
-    check_call(['powershell.exe', '-c', f'scoop install {" ".join(pkgs)}'])
+    apps_txt = check_output('scoop list', shell=True).decode(errors='ignore')
+
+    pkgs_un = [p for p in pkgs if p not in apps_txt]
+    if pkgs_un:
+        logging.info(f'installing scoop {len(pkgs)} pkgs')
+        # -u: disable update scoop when install
+        check_call(['powershell.exe', '-c',
+                    f'scoop install --no-update-scoop {" ".join(pkgs)}'])
+
     # Only need to run once, this setting is persistent.
     if not which('gsudo'):
         raise Exception('not found gsudo for elevate permission')
-
     if not re.search(r'^CacheMode\s*=\s*"Auto"\s+\(global\)$', check_output(['gsudo', 'config'], text=True), re.MULTILINE):
         logging.info('config gsudo CacheMode')
         # [Credentials Cache](https://gerardog.github.io/gsudo/docs/credentials-cache)
         check_call('gsudo config CacheMode Auto'.split())
 
-    logging.info(f'installing scoop global {len(global_pkgs)} pkgs with gsudo')
-    # install global pkgs with gsudo
-    check_call(['gsudo', 'scoop', 'install', '-g'] + global_pkgs)
+    global_pkgs_un = [p for p in global_pkgs if p not in apps_txt]
+    if global_pkgs_un:
+        s = " ".join(global_pkgs_un)
+        logging.info(
+            f'installing scoop global {len(global_pkgs_un)} pkgs with gsudo: {s}')
+        # install global pkgs with gsudo
+        check_call(
+            ['gsudo', f'scoop install --no-update-scoop --global {s}'])
 
 
-winget_pkgs = [
+winget_pkgs = {
     # https://gitforwindows.org/
     'Git.Git',
     # [7-Zip is a file archiver with a high compression ratio.](https://www.7-zip.org/)
@@ -116,11 +180,9 @@ winget_pkgs = [
     # dev env #########
     # [A faster, better and more stable redis desktop manager [GUI client], compatible with Linux, Windows, Mac. What's more, it won't crash when loading massive keys.](https://github.com/qishibo/AnotherRedisDesktopManager)
     'qishibo.AnotherRedisDesktopManager',
-    # netdata [Prometheus exporter for Windows machines](https://github.com/prometheus-community/windows_exporter)
-    'Prometheus.WMIExporter',
-]
+}
 
-winget_i_pkgs = [
+winget_i_pkgs = {
     # 自定义右键菜单
     'Microsoft.VisualStudioCode',
     # 自定义安装位置和选择ffmp
@@ -132,10 +194,10 @@ winget_i_pkgs = [
     # 为何不用virtualbox：在linux桌面太卡，无法有效使用gpu
     'VMware.WorkstationPro',
     # 写入当前用户 not provide access to additional cross-targets like rustup does. [rust Standalone installers](https://forge.rust-lang.org/infra/other-installation-methods.html#standalone-installers)
-    'Rustlang.Rustup',
-]
+    # 'Rustlang.Rustup',
+}
 
-scoop_pkgs = [
+scoop_pkgs = {
     'chezmoi',
     # [Scoop can utilize aria2 to use multi-connection downloads](https://github.com/ScoopInstaller/Scoop#multi-connection-downloads-with-aria2)
     'aria2',
@@ -165,9 +227,9 @@ scoop_pkgs = [
     'innounp',
     # [The WiX toolset lets developers create installers for Windows Installer, the Windows installation engine.](https://wixtoolset.org/)
     'wixtoolset',
-]
+}
 
-scoop_global_pkgs = [
+scoop_global_pkgs = {
     # global install: -g #################
     # [This is a fun, new monospaced font that includes programming ligatures and is designed to enhance the modern look and feel of the Windows Terminal.](https://github.com/microsoft/cascadia-code)
     'Cascadia-Code',
@@ -180,15 +242,17 @@ scoop_global_pkgs = [
     # [Sarasa Gothic / 更纱黑体 / 更紗黑體 / 更紗ゴシック / 사라사 고딕](https://github.com/be5invis/Sarasa-Gothic)
     # [中文等宽字体（Monospace Chinese Font Family）](https://leonvision.online/technology/monospace-chinese-font-family/)
     'SarasaGothic-ttc',  # or `SarasaGothic-SC`
-]
+}
 
 if __name__ == '__main__':
-    config_log(
-        level=logging.INFO if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
-    # C:\Program Files\KeePassXC
-    if 'keepassxc' not in os.environ['PATH'].lower():
-        logging.error(
-            'not found KeePassXC in PATH. please run `$env:Path = "$env:ProgramFiles\\KeePassXC;$env:Path"`')
-        exit(1)
+    level = logging.ERROR
+    args = ChezmoiArgs(os.environ['CHEZMOI_ARGS'])
+    if args.has_debug():
+        level = logging.DEBUG
+    elif args.has_verbose():
+        level = logging.INFO
+    config_log(level=level)
+
     install_winget(winget_pkgs, winget_i_pkgs)
     setup_scoop(scoop_pkgs, scoop_global_pkgs)
+    winget_install_windows_exporter()

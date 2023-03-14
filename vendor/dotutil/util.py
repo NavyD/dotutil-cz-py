@@ -122,11 +122,11 @@ class ChezmoiArgs:
     def __init__(self, s: str) -> None:
         if not s:
             raise SetupExcetion('empty args')
-        if m := re.compile(r'^(.*?chezmoi)\s+(--?\w+(\s+)?)*((\w+(-\w+)?)\s+?(--?\w+(\s+)?)*)?(.*)$').match(s):
-            self._global_opts = m.group(2)
-            self._subcommand = m.group(5)
-            self._sub_opts = m.group(7)
-            self._target = m.group(9)
+        if m := re.compile(r'^(.*?chezmoi(\.exe)?)\s+(--?\w+(\s+)?)*((\w+(-\w+)?)\s+?(--?\w+(\s+)?)*)?(.*)$').match(s):
+            self._global_opts = m.group(3)
+            self._subcommand = m.group(6)
+            self._sub_opts = m.group(8)
+            self._target = m.group(10)
         else:
             raise SetupExcetion(f'failed to parse chezmoi args: {s}')
 
@@ -146,4 +146,4 @@ class ChezmoiArgs:
         return self._subcommand
 
     def target_paths(self) -> list[Path]:
-        return [Path(s) for s in self._target.split()]
+        return [Path(s) for s in self._target.split()] if self._target else []
