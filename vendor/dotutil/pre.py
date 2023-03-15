@@ -3,12 +3,13 @@ import logging
 import os
 import sys
 from pathlib import Path
-from sys import stderr
+from shutil import which
+from subprocess import DEVNULL, check_call
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
 from util import (ChezmoiArgs, SetupExcetion, config_log,  # noqa: E402
-                  elevate_copy_file, has_changed)
+                  elevate_copy_file, has_changed, is_windows)
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root
@@ -32,7 +33,13 @@ from util import (ChezmoiArgs, SetupExcetion, config_log,  # noqa: E402
 """
 
 
-def copy_root(mapped_root_dir: Path):
+def copy_from_root(args: ChezmoiArgs):
+    mapped_root_dir = args.mapped_root()
+    target_paths = args.target_paths()
+    if target_paths and all(mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths):
+        logging.info(
+            f'skipped copy root to {mapped_root_dir} for target paths: {target_paths}')
+        return
     if not mapped_root_dir.exists():
         logging.info(f"skipped copy mapped root is not dir: {mapped_root_dir}")
         return
@@ -59,7 +66,28 @@ def copy_root(mapped_root_dir: Path):
     logging.info(f"found changed {count} files")
 
 
-if __name__ == '__main__':
+def check_passhole(args: ChezmoiArgs):
+    if is_windows():
+        pass
+    elif which('ph'):
+        check_call(['ph', 'list'], stdout=DEVNULL)
+
+
+def check_super_permission(args: ChezmoiArgs):
+    if is_windows():
+        pass
+    elif which('sudo') and (not args.target_paths() or any(args.mapped_root() in pp for p in args.target_paths() for pp in p.parents)):
+        cmd = ['sudo', 'echo']
+        logging.info(f'checking super permission with `{cmd}`')
+        check_call(cmd, stdout=DEVNULL)
+
+
+def print_env():
+    for key, value in os.environ.items():
+        print(f'{key}={value}')
+
+
+def main():
     level = logging.ERROR
     s = os.environ['CHEZMOI_ARGS']
     args = ChezmoiArgs(s)
@@ -70,15 +98,14 @@ if __name__ == '__main__':
     config_log(level=level)
     logging.info(f'parsed chezmoi {args.__dict__} for args `{s}`')
 
-    mapped_root_dir = Path.home().joinpath(".root")
+    if args.has_debug():
+        print_env()
 
-    target_paths = args.target_paths()
-    if target_paths and all(mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths):
-        logging.info(
-            f'skipped copy root to {mapped_root_dir} for target paths: {target_paths}')
-    else:
-        try:
-            copy_root(mapped_root_dir)
-        except SetupExcetion as e:
-            logging.error(f"{e}", file=stderr)
-            exit(1)
+    check_passhole(args)
+    check_super_permission(args)
+
+    copy_from_root(args)
+
+
+if __name__ == '__main__':
+    main()

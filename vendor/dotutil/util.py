@@ -119,31 +119,57 @@ def dyn_import(st: str):
 
 
 class ChezmoiArgs:
-    def __init__(self, s: str) -> None:
+    def __init__(self, s=os.environ['CHEZMOI_ARGS']) -> None:
         if not s:
             raise SetupExcetion('empty args')
         if m := re.compile(r'^(.*?chezmoi(\.exe)?)\s+(--?\w+(\s+)?)*((\w+(-\w+)?)\s+?(--?\w+(\s+)?)*)?(.*)$').match(s):
             self._global_opts = m.group(3)
             self._subcommand = m.group(6)
             self._sub_opts = m.group(8)
-            self._target = m.group(10)
+            self._target_paths = [Path(s) for s in m.group(
+                10).split()] if m.group(10) else []
         else:
             raise SetupExcetion(f'failed to parse chezmoi args: {s}')
 
+        self._is_verbose = None
+        self._is_debug = None
+
     def has_debug(self) -> bool:
-        return self._global_opts and '--debug' in self._global_opts
+        if self._is_debug is None:
+            self._is_debug = self._global_opts and '--debug' in self._global_opts
+        return self._is_debug
 
     def has_verbose(self) -> bool:
-        if not self._sub_opts:
-            return False
-        opts = self._sub_opts.split()
-        if any(v in opts for v in ['-v', '--verbose']):
-            return True
-        pat = re.compile(r'^-\w*v')
-        return any(pat.match(v) for v in opts)
+        if self._is_verbose is None:
+            if not self._sub_opts:
+                self._is_verbose = False
+            opts = self._sub_opts.split()
+            if any(v in opts for v in ['-v', '--verbose']):
+                self._is_verbose = True
+            pat = re.compile(r'^-\w*v')
+            self._is_verbose = any(pat.match(v) for v in opts)
+        return self._is_verbose
 
     def subcommand(self) -> str:
         return self._subcommand
 
     def target_paths(self) -> list[Path]:
-        return [Path(s) for s in self._target.split()] if self._target else []
+        return self._target_paths
+
+    def mapped_root(self) -> Path:
+        if v := os.environ['CHEZMOI_HOME_DIR']:
+            return Path(v).joinpath('.root')
+        else:
+            raise SetupExcetion('not found env CHEZMOI_HOME_DIR')
+
+    def root_list(self) -> Path:
+        if v := os.environ['CHEZMOI_CACHE_DIR']:
+            return Path(v).joinpath('.root')
+        else:
+            raise SetupExcetion('not found env CHEZMOI_CACHE_DIR')
+
+    def bin_path(self) -> Path:
+        if v := os.environ['CHEZMOI_EXECUTABLE']:
+            return Path(v)
+        else:
+            raise SetupExcetion('not found env CHEZMOI_EXECUTABLE')
