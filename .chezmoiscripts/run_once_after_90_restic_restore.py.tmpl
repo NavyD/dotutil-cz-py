@@ -38,17 +38,17 @@ RESTIC_PASSWORD = '{{- passhole "dotfiles/restic-repo" "Password" -}}'
 #   {{- end }}
 # {{- end }}
 
-if __name__ == "__main__":
 
+def main():
     config_log(
         level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
 
-    if not HAS_RESTIC or not RESTIC_PASSWORD:
-        logging.warning('skipped restic restore: not found restic password')
-        exit(0)
-
     if not RESTIC_SRC_PATHS:
         logging.info('skipped restic restore: empty src paths')
+        exit(0)
+
+    if not HAS_RESTIC or not RESTIC_PASSWORD:
+        logging.error('skipped restic restore: not found restic password')
         exit(0)
 
     restic_path = RESTIC_BIN_PATH
@@ -68,3 +68,7 @@ if __name__ == "__main__":
             logging.info(
                 f'restoring to {TARGET_PATH} from restic {p} with command args `{" ".join(args)}`')
             check_call(args, env=env)
+
+
+if __name__ == "__main__":
+    main()
