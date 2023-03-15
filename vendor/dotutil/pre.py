@@ -76,7 +76,7 @@ def check_passhole(args: ChezmoiArgs):
 def check_super_permission(args: ChezmoiArgs):
     if is_windows():
         pass
-    elif which('sudo') and (not args.target_paths() or any(args.mapped_root() in pp for p in args.target_paths() for pp in p.parents)):
+    elif which('sudo') and (not args.target_paths() or any(args.mapped_root() in p.parents for p in args.target_paths())):
         cmd = ['sudo', 'echo']
         logging.info(f'checking super permission with `{cmd}`')
         check_call(cmd, stdout=DEVNULL)

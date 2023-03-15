@@ -219,7 +219,7 @@ def sync(args: ChezmoiArgs):
             f'skipped apply non mapped root {mapped_root} in target paths: {target_paths}')
     else:
         copy_to_root(mapped_root)
-        RootCleaner(mapped_root, rootlist_path, args.bin_path).clean()
+        RootCleaner(mapped_root, rootlist_path, args.bin_path()).clean()
 
 
 if __name__ == "__main__":
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     if args.has_debug():
         level = logging.DEBUG
     elif args.has_verbose():
-        level = logging.DEBUG
+        level = logging.INFO
     config_log(level=level)
 
     try:
