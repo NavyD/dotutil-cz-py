@@ -67,10 +67,12 @@ def copy_from_root(args: ChezmoiArgs):
 
 
 def check_passhole(args: ChezmoiArgs):
-    if is_windows():
-        pass
-    elif which('ph'):
-        check_call(['ph', 'list'], stdout=DEVNULL)
+    if args.data()['has_keepass'] is True:
+        logging.info('checking passhole')
+        if is_windows():
+            check_call(['wsl.exe', '--', 'ph', 'list'], stdout=DEVNULL)
+        elif which('ph'):
+            check_call(['ph', 'list'], stdout=DEVNULL)
 
 
 def check_super_permission(args: ChezmoiArgs):

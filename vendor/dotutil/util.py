@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, check_call, check_output, run
+from typing import Dict
 from urllib.request import urlopen
 
 
@@ -133,6 +134,7 @@ class ChezmoiArgs:
 
         self._is_verbose = None
         self._is_debug = None
+        self._data = None
 
     def has_debug(self) -> bool:
         if self._is_debug is None:
@@ -173,3 +175,8 @@ class ChezmoiArgs:
             return Path(v)
         else:
             raise SetupExcetion('not found env CHEZMOI_EXECUTABLE')
+
+    def data(self) -> Dict[str, str]:
+        if self._data is None:
+            self._data = json.loads(check_output([self.bin_path(), 'data', '--format', 'json'], text=True))
+        return self._data
