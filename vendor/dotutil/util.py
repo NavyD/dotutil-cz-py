@@ -180,3 +180,10 @@ class ChezmoiArgs:
         if self._data is None:
             self._data = json.loads(check_output([self.bin_path(), 'data', '--format', 'json'], text=True))
         return self._data
+
+    def init_log(self):
+        if self.has_debug():
+            level = logging.DEBUG
+        elif self.has_verbose():
+            level = logging.INFO
+        config_log(level=level)

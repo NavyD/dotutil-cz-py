@@ -10,7 +10,7 @@ from typing import Set
 
 sys.path.append(
     str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
-from util import (ChezmoiArgs, SetupExcetion, config_log,  # noqa: E402
+from util import (ChezmoiArgs, SetupExcetion,  # noqa: E402
                   elevate_copy_file, has_changed, is_windows)
 
 """
@@ -31,7 +31,7 @@ def copy_to_root(mapped_root: Path):
         diff_count += 1
 
     for path in mapped_root.rglob("*"):
-        if path.is_file():
+        if path.is_file() or path.is_symlink():
             root_path = get_root_path(path, mapped_root)
             if not root_path.exists():
                 elevate_copy(path, root_path)
@@ -223,13 +223,8 @@ def sync(args: ChezmoiArgs):
 
 
 if __name__ == "__main__":
-    level = logging.ERROR
-    args = ChezmoiArgs(os.environ['CHEZMOI_ARGS'])
-    if args.has_debug():
-        level = logging.DEBUG
-    elif args.has_verbose():
-        level = logging.INFO
-    config_log(level=level)
+    args = ChezmoiArgs()
+    args.init_log()
 
     try:
         sync(args)

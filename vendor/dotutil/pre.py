@@ -8,7 +8,7 @@ from subprocess import DEVNULL, check_call
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
-from util import (ChezmoiArgs, SetupExcetion, config_log,  # noqa: E402
+from util import (ChezmoiArgs, SetupExcetion,  # noqa: E402
                   elevate_copy_file, has_changed, is_windows)
 
 """
@@ -90,15 +90,11 @@ def print_env():
 
 
 def main():
-    level = logging.ERROR
     s = os.environ['CHEZMOI_ARGS']
     args = ChezmoiArgs(s)
-    if args.has_debug():
-        level = logging.DEBUG
-    elif args.has_verbose():
-        level = logging.INFO
-    config_log(level=level)
-    logging.info(f'parsed chezmoi {args.__dict__} for args `{s}`')
+    if args.has_debug() or args.has_verbose():
+        print(f'parsed chezmoi {args.__dict__} for args `{s}`')
+    args.init_log()
 
     if args.has_debug():
         print_env()
