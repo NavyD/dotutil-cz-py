@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, check_call, check_output, run
-from typing import Dict
+from typing import Dict, Set
 from urllib.request import urlopen
 
 
@@ -127,8 +127,8 @@ class ChezmoiArgs:
             self._global_opts = m.group(3)
             self._subcommand = m.group(6)
             self._sub_opts = m.group(8)
-            self._target_paths = [Path(s) for s in m.group(
-                10).split()] if m.group(10) else []
+            self._target_paths = set(Path(s) for s in m.group(
+                10).split()) if m.group(10) else set()
         else:
             raise SetupExcetion(f'failed to parse chezmoi args: {s}')
 
@@ -155,7 +155,7 @@ class ChezmoiArgs:
     def subcommand(self) -> str:
         return self._subcommand
 
-    def target_paths(self) -> list[Path]:
+    def target_paths(self) -> Set[Path]:
         return self._target_paths
 
     def mapped_root(self) -> Path:
@@ -178,7 +178,8 @@ class ChezmoiArgs:
 
     def data(self) -> Dict[str, str]:
         if self._data is None:
-            self._data = json.loads(check_output([self.bin_path(), 'data', '--format', 'json'], text=True))
+            self._data = json.loads(check_output(
+                [self.bin_path(), 'data', '--format', 'json'], text=True))
         return self._data
 
     def init_log(self):

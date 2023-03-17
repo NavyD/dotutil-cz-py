@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, check_call, run
 from sys import stdin
-from typing import Set
+from typing import Iterable, Set
 
 sys.path.append(
     str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
@@ -58,54 +58,65 @@ class RootCleaner:
         self._cz_bin = cz_bin
         self._exact_pat = re.compile(r'^(\w+_)*exact_.+')
 
-    def clean(self):
+        # rootlist仅保存上次跳过删除的文件
+        old_removable_mapped_paths = set(Path(line) for line in self._rootlist_path.read_text().splitlines(
+        ) if line.strip()) if self._rootlist_path.is_file() else set()
+        self.log.debug(
+            f'loaded removable mapped root {len(old_removable_mapped_paths)} paths: {", ".join([str(p) for p in old_removable_mapped_paths])}')
+        self._old_removable_mapped_paths = old_removable_mapped_paths
+
+    def clean(self, target_paths: Iterable[Path]):
         # get removed root paths
-        paths = self.find_removable_mapped_paths()
+        removable_paths = self.find_removable_mapped_paths(target_paths)
         root_paths = set()
-        for path in paths:
+        for path in removable_paths:
             if rp := get_root_path(path, self._mapped_root):
                 if rp.exists():
                     root_paths.add(rp)
 
         # remove paths
         self.log.info(
-            f'trying to remove exists root {len(root_paths)} paths for mapped root {len(paths)} paths')
+            f'trying to remove exists root {len(root_paths)} paths for mapped root {len(removable_paths)} paths')
         removed_root_paths = self.confirm_rm(root_paths)
+        self.log.debug(
+            f'removed {len(removed_root_paths)} files: {" ".join(str(p) for p in removed_root_paths)}')
+
+        removed_mapped_root_paths = set(
+            self.root_target_path(p) for p in removed_root_paths)
+        rest_paths = removable_paths - removed_mapped_root_paths
+        rest_paths.update(self._old_removable_mapped_paths -  # noqa: W504
+                          removed_mapped_root_paths)
+        rest_paths = set(p for p in rest_paths if get_root_path(
+            p, self._mapped_root).exists())
 
         # save current root list and skipped for next apply
-        self.log.debug(
-            f"saving current root list to {self._rootlist_path} after apply")
-        count = 0
+        self.log.info(
+            f"saving rest {len(rest_paths)} paths to {self._rootlist_path} after apply")
         with open(self._rootlist_path, 'w') as f:
-            for path in self._mapped_root.rglob("*"):
-                if path.is_file():
-                    f.write(f"{str(path)}\n")
-                    count += 1
-
-            if skipped := root_paths - removed_root_paths:
-                self.log.debug(f'saving skipped {len(skipped)} paths')
-                for path in skipped:
-                    if path.is_file():
-                        # root path as mapped path
-                        mapped_path = self.root_target_path(path)
-                        f.write(f"{mapped_path}\n")
-                        count += 1
-        self.log.info(f"saved {count} files to {self._rootlist_path}")
+            for path in rest_paths:
+                f.write(f"{str(path)}\n")
 
     def root_target_path(self, root_path: Path) -> Path:
         return self._mapped_root.joinpath(str(root_path).lstrip(os.sep))
 
-    def find_removable_mapped_paths(self) -> Set[Path]:
-        old_mapped_paths = set(Path(line) for line in self._rootlist_path.read_text().splitlines(
-        ) if line.strip()) if self._rootlist_path.is_file() else set(p for p in self._mapped_root.rglob("*"))
-        self.log.debug(
-            f'loaded old mapped root {len(old_mapped_paths)} paths: {", ".join([str(p) for p in old_mapped_paths])}')
-
+    def find_removable_mapped_paths(self, target_paths: Iterable[Path]) -> Set[Path]:
         self.log.info(
-            f'finding all removable paths in mapped {len(old_mapped_paths)} paths')
+            f'finding all removable paths for target paths {" ".join(str(p) for p in target_paths)} in old mapped {len(self._old_removable_mapped_paths)} paths')
+
+        target_mapped_paths = None
+        if target_paths:
+            target_mapped_paths = set(
+                p for path in target_paths for p in path.rglob('*'))
+        else:
+            target_mapped_paths = set(
+                p for p in self._mapped_root.rglob('*'))
+
+        target_mapped_paths.update(self._old_removable_mapped_paths)
+
         exact_paths = {}
         removable_paths = set()
-        for path in old_mapped_paths:
+        # 找到在target不存在并找出exact目录
+        for path in target_mapped_paths:
             pp = path.parent
             if pp not in exact_paths:
                 exact_paths[pp] = self.is_exact(pp)
@@ -114,10 +125,10 @@ class RootCleaner:
                 removable_paths.add(path)
             elif path.is_dir() and path not in exact_paths:
                 exact_paths[path] = self.is_exact(path)
-
         self.log.debug(
             f'found removable {len(removable_paths)} paths for non exist files: {" ".join(str(p) for p in removable_paths)}')
 
+        # 对于exact目录找到对应root中多余存在的文件
         for path in exact_paths:
             if exact_paths[path]:
                 mapped_root_files = {p for p in path.glob('*')}
@@ -219,7 +230,8 @@ def sync(args: ChezmoiArgs):
             f'skipped apply non mapped root {mapped_root} in target paths: {target_paths}')
     else:
         copy_to_root(mapped_root)
-        RootCleaner(mapped_root, rootlist_path, args.bin_path()).clean()
+        RootCleaner(mapped_root, rootlist_path,
+                    args.bin_path()).clean(target_paths)
 
 
 if __name__ == "__main__":
