@@ -70,8 +70,8 @@ def elevate_copy_file(src: Path, dst: Path):
         cmd = ['gsudo', 'robocopy', str(src.parent), str(
             dst.parent), str(src.name), '/COPY:DT', '/R:0']
     else:
-        cmd = f'sudo cp --preserve=links,mode,timestamps --no-dereference {src} {dst}'.split(
-        )
+        cmd = ['sudo', 'cp', '--preserve=links,mode,timestamps',
+               '--no-dereference', str(src), str(dst)]
         if not dst.parent.exists():
             check_call(f"sudo mkdir -p {dst.parent}".split())
 
