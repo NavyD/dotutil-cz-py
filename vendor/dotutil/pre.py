@@ -9,8 +9,8 @@ from subprocess import DEVNULL, check_call
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
-from util import (ChezmoiArgs, SetupExcetion,  # noqa: E402
-                  elevate_copy_file, has_changed, is_windows)
+from util import (ChezmoiArgs, SetupExcetion, elevate_copy_file,  # noqa: E402
+                  has_changed, is_windows)
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root

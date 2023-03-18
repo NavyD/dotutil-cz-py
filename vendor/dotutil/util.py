@@ -120,38 +120,34 @@ def dyn_import(st: str):
 
 
 class ChezmoiArgs:
-    def __init__(self, s=os.environ['CHEZMOI_ARGS']) -> None:
-        if not s:
-            raise SetupExcetion('empty args')
-        if m := re.compile(r'^(.*?chezmoi(\.exe)?)\s+(--?\w+(\s+)?)*((\w+(-\w+)?)\s+?(--?\w+(\s+)?)*)?(.*)$').match(s):
-            self._global_opts = m.group(3)
-            self._subcommand = m.group(6)
-            self._sub_opts = m.group(8)
-            self._target_paths = set(Path(s) for s in m.group(
-                10).split()) if m.group(10) else set()
+    def __init__(self, args=None) -> None:
+        if not args:
+            args = os.environ['CHEZMOI_ARGS']
+        if m := re.compile(r'^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$').match(args):
+            self._subcommand = (m.group(6) or '').strip()
+            global_opts = (m.group(3) or '').strip()
+            sub_opts = (m.group(8) or '').strip()
+            self._paths = (m.group(11) or '').strip()
+            self._opts = (global_opts + ' ' + sub_opts).strip()
         else:
-            raise SetupExcetion(f'failed to parse chezmoi args: {s}')
+            raise SetupExcetion(f'failed to parse chezmoi args: {args}')
 
-        self._is_verbose = None
-        self._is_debug = None
+        self._target_paths = set(
+            Path(s) for s in self._paths.split()) if self._paths else set()
+
+        opts = set(self._opts.split())
+        self._is_debug = bool(opts) and '--debug' in opts
+
+        pat_multi_opts = re.compile(r'^-\w*v')
+        self._is_verbose = any(v in opts for v in [
+                               '-v', '--verbose']) or any(pat_multi_opts.match(v) for v in opts)
+
         self._data = None
 
     def has_debug(self) -> bool:
-        if self._is_debug is None:
-            self._is_debug = self._global_opts and '--debug' in self._global_opts
         return self._is_debug
 
     def has_verbose(self) -> bool:
-        if self._is_verbose is None:
-            if not self._sub_opts:
-                self._is_verbose = False
-            else:
-                opts = self._sub_opts.split()
-                if any(v in opts for v in ['-v', '--verbose']):
-                    self._is_verbose = True
-                else:
-                    pat = re.compile(r'^-\w*v')
-                    self._is_verbose = any(pat.match(v) for v in opts)
         return self._is_verbose
 
     def subcommand(self) -> str:
