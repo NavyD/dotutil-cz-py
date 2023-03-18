@@ -145,11 +145,13 @@ class ChezmoiArgs:
         if self._is_verbose is None:
             if not self._sub_opts:
                 self._is_verbose = False
-            opts = self._sub_opts.split()
-            if any(v in opts for v in ['-v', '--verbose']):
-                self._is_verbose = True
-            pat = re.compile(r'^-\w*v')
-            self._is_verbose = any(pat.match(v) for v in opts)
+            else:
+                opts = self._sub_opts.split()
+                if any(v in opts for v in ['-v', '--verbose']):
+                    self._is_verbose = True
+                else:
+                    pat = re.compile(r'^-\w*v')
+                    self._is_verbose = any(pat.match(v) for v in opts)
         return self._is_verbose
 
     def subcommand(self) -> str:
@@ -183,6 +185,7 @@ class ChezmoiArgs:
         return self._data
 
     def init_log(self):
+        level = logging.ERROR
         if self.has_debug():
             level = logging.DEBUG
         elif self.has_verbose():
