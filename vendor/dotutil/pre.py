@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from shutil import which
@@ -52,7 +53,6 @@ def copy_from_root(args: ChezmoiArgs):
         if path.is_file():
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, mapped_root_dir))
-            logging.debug(f'checking changed: {path} and {root_path}')
             changed = None
             try:
                 changed = has_changed(root_path, path)
@@ -67,8 +67,48 @@ def copy_from_root(args: ChezmoiArgs):
 
 
 def check_passhole(args: ChezmoiArgs):
-    if args.data()['has_keepass'] is True:
-        logging.info('checking passhole')
+    if args.data()['has_keepass'] is not True:
+        return
+
+    has_ph = False
+    if args.target_paths():
+        src_paths = [args.get_source_path(p) for p in args.target_paths()]
+        logging.debug(f'finding passhole template in {src_paths}')
+
+        if src_paths:
+            pat = re.compile(r'\{\{.*(passhole(\s+".+"){2}).*\}\}')
+            paths = set()
+            # find all files
+            for path in src_paths:
+                if path.is_dir():
+                    paths.update(p for p in path.rglob('*') if p.is_file())
+                elif path.exists():
+                    # cz diff -v ~/.local/bin/gitea
+                    # /home/navyd/.local/share/chezmoi/dot_local/bin/create_executable_: No such file or directory (os error 2)
+                    # src_paths = [p for p in src_paths if p.exists()]
+                    paths.add(path)
+
+            # find one file if contains ph
+            for path in paths:
+                if path.suffix == '.tmpl':
+                    try:
+                        with open(path) as file:
+                            for line in file:
+                                if pat.search(line):
+                                    has_ph = True
+                                    logging.info(
+                                        f'found passhole template in {path}')
+                                    break
+                        if has_ph:
+                            break
+                    except UnicodeDecodeError:
+                        logging.debug(
+                            f'skipped check passhole for non-text {path}')
+                        continue
+    else:
+        has_ph = True
+
+    if has_ph:
         if is_windows():
             check_call(['wsl.exe', '--', 'ph', 'list'], stdout=DEVNULL)
         elif which('ph'):
@@ -76,11 +116,12 @@ def check_passhole(args: ChezmoiArgs):
 
 
 def check_super_permission(args: ChezmoiArgs):
+    target_paths = args.target_paths()
     if is_windows():
         pass
-    elif which('sudo') and (not args.target_paths() or any(args.mapped_root() in p.parents for p in args.target_paths())):
+    elif which('sudo') and (not target_paths or any(args.mapped_root() in p.parents for p in target_paths)):
         cmd = ['sudo', 'echo']
-        logging.info(f'checking super permission with `{cmd}`')
+        logging.info(f'checking super permission for {target_paths}')
         check_call(cmd, stdout=DEVNULL)
 
 
@@ -99,8 +140,11 @@ def main():
     if args.has_debug():
         print_env()
 
-    check_passhole(args)
-    check_super_permission(args)
+    try:
+        check_passhole(args)
+        check_super_permission(args)
+    except KeyboardInterrupt:
+        exit(1)
 
     copy_from_root(args)
 

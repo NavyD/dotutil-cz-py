@@ -188,3 +188,10 @@ class ChezmoiArgs:
         elif self.has_verbose():
             level = logging.INFO
         config_log(level=level)
+
+    def get_source_path(self, target: Path) -> Path:
+        if target is None:
+            raise SetupExcetion('target is none')
+        p = run([self.bin_path(), 'source-path', target],
+                stdout=PIPE, stderr=PIPE, text=True)
+        return Path(p.stdout.strip()) if p.returncode == 0 else None
