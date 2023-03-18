@@ -123,19 +123,19 @@ class ChezmoiArgs:
     def __init__(self, args=None) -> None:
         if not args:
             args = os.environ['CHEZMOI_ARGS']
-        if m := re.compile(r'^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$').match(args):
-            self._subcommand = (m.group(6) or '').strip()
-            global_opts = (m.group(3) or '').strip()
-            sub_opts = (m.group(8) or '').strip()
-            self._paths = (m.group(11) or '').strip()
-            self._opts = (global_opts + ' ' + sub_opts).strip()
-        else:
+
+        m = re.compile(
+            r'^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$').match(args)
+        if not m:
             raise SetupExcetion(f'failed to parse chezmoi args: {args}')
 
-        self._target_paths = set(
-            Path(s) for s in self._paths.split()) if self._paths else set()
+        global_opts = (m.group(3) or '').strip()
+        self._subcommand = (m.group(6) or '').strip()
+        sub_opts = (m.group(8) or '').strip()
+        paths = (m.group(11) or '').strip()
+        opts = set((global_opts + ' ' + sub_opts).strip().split())
 
-        opts = set(self._opts.split())
+        self._target_paths = set(Path(s) for s in paths.split())
         self._is_debug = bool(opts) and '--debug' in opts
 
         pat_multi_opts = re.compile(r'^-\w*v')

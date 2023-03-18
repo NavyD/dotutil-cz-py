@@ -72,7 +72,9 @@ def check_passhole(args: ChezmoiArgs):
 
     has_ph = False
     if args.target_paths():
-        src_paths = [args.get_source_path(p) for p in args.target_paths()]
+        # filtered if src path is none
+        src_paths = [p for p in map(
+            lambda p: args.get_source_path(p), args.target_paths()) if p]
         logging.debug(f'finding passhole template in {src_paths}')
 
         if src_paths:
