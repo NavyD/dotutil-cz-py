@@ -121,7 +121,7 @@ def check_super_permission(args: ChezmoiArgs):
     target_paths = args.target_paths()
     if is_windows():
         pass
-    elif which('sudo') and (not target_paths or any(args.mapped_root() in p.parents for p in target_paths)):
+    elif which('sudo') and args.mapped_root().is_dir() and (not target_paths or any(args.mapped_root() in p.parents for p in target_paths)):
         cmd = ['sudo', 'echo']
         logging.info(f'checking super permission for {target_paths}')
         check_call(cmd, stdout=DEVNULL)

@@ -216,9 +216,8 @@ def sync(args: ChezmoiArgs):
     target_paths = args.target_paths()
 
     if not mapped_root.is_dir():
-        print(
-            f"apply error: mapped root is not dir: {mapped_root}")
-        exit(1)
+        logging.warning(
+            f"skipped apply mapped root {mapped_root} is not dir")
     elif args.subcommand() != 'apply':
         logging.info(f'skipped apply for subcommand: {args.subcommand()}')
     # only run once when apply post and run script
