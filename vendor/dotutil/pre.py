@@ -69,6 +69,9 @@ def copy_from_root(args: ChezmoiArgs):
 def check_passhole(args: ChezmoiArgs):
     if args.data()['has_keepass'] is not True:
         return
+    elif not is_windows() and not Path(os.environ.get('CHEZMOI_HOME_DIR', str(Path.home()))).joinpath('.config/passhole.ini').is_file():
+        print('not found passhole.ini. please run `chezmoi apply ~/.config/passhole.ini` at first and reinit `chezmoi init`')
+        exit(1)
 
     has_ph = False
     if args.target_paths():
@@ -127,6 +130,13 @@ def check_super_permission(args: ChezmoiArgs):
         check_call(cmd, stdout=DEVNULL)
 
 
+def check_wsl_systemd(args: ChezmoiArgs):
+    data = args.data()
+    if data['is_wsl2'] is True and data['has_systemd'] is False:
+        print('not found systemd on wsl2. please run `chezmoi apply ~/.root/etc/wsl.conf` enable systemd and reboot and reinit `chezmoi init`')
+        exit(1)
+
+
 def print_env():
     for key, value in os.environ.items():
         print(f'{key}={value}')
@@ -147,6 +157,8 @@ def main():
         check_super_permission(args)
     except KeyboardInterrupt:
         exit(1)
+
+    check_wsl_systemd(args)
 
     copy_from_root(args)
 
