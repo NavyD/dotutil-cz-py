@@ -148,6 +148,17 @@ def check_wsl_systemd(args: ChezmoiArgs):
             p.parent.mkdir(parents=True)
 
 
+def check_restic(args: ChezmoiArgs):
+    data = args.data()
+    if data['has_restic']:
+        p = Path(data['restic']['path'])
+        # # allow this `chezmoi apply ~/.config/passhole.ini` pass
+        if not p.exists() and len(args.target_paths()) != 1 and p not in args.target_paths():
+            print(
+                f'not found restic bin in {p}. please run `chezmoi apply {p}` at first')
+            exit(1)
+
+
 def print_env():
     for key, value in os.environ.items():
         print(f'{key}={value}')
@@ -170,6 +181,7 @@ def main():
         exit(1)
 
     check_wsl_systemd(args)
+    check_restic(args)
 
     copy_from_root(args)
 
