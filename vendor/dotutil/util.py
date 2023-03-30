@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import re
+import sys
+import textwrap
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, check_call, check_output, run
 from typing import Dict, Set
@@ -66,23 +68,26 @@ def is_windows():
 def elevate_copy_file(src: Path, dst: Path):
     # [How do I check if I'm running on Windows in Python? [duplicate]](https://stackoverflow.com/a/1325587/8566831)
     if is_windows():
+        # [Proper indentation for multiline strings?](https://stackoverflow.com/a/2504454/8566831)
+        pycp_str = textwrap.dedent(f"""\
+                                        from pathlib import Path
+                                        import shutil
+                                        dst = Path(r'{str(dst)}')
+                                        dst.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copyfile(r'{str(src)}', dst, follow_symlinks=False)
+                                        """)
         # [How to preserve file attributes when one copies files in Windows?](https://superuser.com/a/1326224)
-        cmd = ['gsudo', 'robocopy', str(src.parent), str(
-            dst.parent), str(src.name), '/COPY:DT', '/R:0']
+        args = ['gsudo', sys.executable, '-c', pycp_str]
     else:
-        cmd = ['sudo', 'cp', '--preserve=links,mode,timestamps',
-               '--no-dereference', str(src), str(dst)]
+        args = ['sudo', 'cp', '--preserve=links,mode,timestamps',
+                '--no-dereference', str(src), str(dst)]
         if not dst.parent.exists():
             check_call(f"sudo mkdir -p {dst.parent}".split())
 
     logging.info(
         f'copying file {src} -> {dst}')
-    res = run(cmd, stdout=PIPE)
-    logging.debug(
-        f'`{" ".join(cmd)}` output: {res.stdout.decode(errors="ignore")}')
-    if not is_windows() or res.returncode not in range(0, 8):
-        # https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy#exit-return-codes
-        res.check_returncode()
+    out = check_output(args)
+    logging.debug(f'`{" ".join(args)}` output: {out.decode(errors="ignore")}')
 
 
 def download_file(url, file):
@@ -135,7 +140,7 @@ class ChezmoiArgs:
         paths = (m.group(11) or '').strip()
         opts = set((global_opts + ' ' + sub_opts).strip().split())
 
-        self._target_paths = set(Path(s) for s in paths.split())
+        self._target_paths = set(Path(s).expanduser() for s in paths.split())
         self._is_debug = bool(opts) and '--debug' in opts
 
         pat_multi_opts = re.compile(r'^-\w*v')
