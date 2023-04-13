@@ -38,7 +38,7 @@ def get_digest(path: Path) -> str:
 
 def has_changed(src: Path, dst: Path) -> bool:
     if not src.exists():
-        return False
+        raise SetupExcetion(f"{src} is not exists")
     if not src.is_file():
         raise SetupExcetion(f"{src} is not a file")
     s = src.stat()

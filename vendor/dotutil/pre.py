@@ -5,7 +5,8 @@ import re
 import sys
 from pathlib import Path
 from shutil import which
-from subprocess import DEVNULL, check_call
+from subprocess import DEVNULL, check_call, check_output
+from typing import Set
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
@@ -34,7 +35,7 @@ from util import (ChezmoiArgs, SetupExcetion, elevate_copy_file,  # noqa: E402
 """
 
 
-def copy_from_root(args: ChezmoiArgs):
+def sync_from_root(args: ChezmoiArgs):
     mapped_root_dir = args.mapped_root()
     target_paths = args.target_paths()
     if target_paths and all(mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths):
@@ -47,12 +48,21 @@ def copy_from_root(args: ChezmoiArgs):
     elif mapped_root_dir.is_file():
         raise SetupExcetion(f"mapped root is not dir: {mapped_root_dir}")
 
-    logging.info(f'copying root to {mapped_root_dir} if changed')
+    managed_paths = find_managed_paths(args)
+
+    logging.info(
+        f'syncing root to {mapped_root_dir} if changed for managed .root {len(managed_paths)} files')
     count = 0
     for path in mapped_root_dir.rglob("*"):
         if path.is_file():
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, mapped_root_dir))
+            # remove mapped root path if root path not exists
+            if path in managed_paths and not root_path.exists():
+                logging.info(f'removing {path} for non exists {root_path}')
+                os.remove(path)
+                continue
+
             changed = None
             try:
                 changed = has_changed(root_path, path)
@@ -64,6 +74,16 @@ def copy_from_root(args: ChezmoiArgs):
                 elevate_copy_file(root_path, path)
                 count += 1
     logging.info(f"found changed {count} files")
+
+
+def find_managed_paths(cz_args: ChezmoiArgs) -> Set[Path]:
+    target_paths = cz_args.target_paths() or [cz_args.mapped_root()]
+    args = [cz_args.bin_path(), 'managed', '--path-style', 'absolute'] + \
+        [str(p) for p in target_paths]
+    logging.info(
+        f'finding all managed files in {target_paths} with command args: {args}')
+    managed_str = check_output(args, text=True)
+    return set(Path(line) for line in managed_str.splitlines())
 
 
 def check_passhole(args: ChezmoiArgs):
@@ -174,17 +194,17 @@ def main():
     if args.has_debug():
         print_env()
 
-    try:
-        check_passhole(args)
-        check_super_permission(args)
-    except KeyboardInterrupt:
-        exit(1)
-
+    check_passhole(args)
+    check_super_permission(args)
     check_wsl_systemd(args)
     check_restic(args)
 
-    copy_from_root(args)
+    sync_from_root(args)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('Interrupt by user', file=sys.stderr)
+        exit(1)
