@@ -9,6 +9,39 @@ from time import sleep
 from psutil import disk_io_counters, disk_partitions
 
 
+class AliveDisk:
+    def __init__(self, path: str) -> None:
+        self.log = logging.getLogger(__name__)
+        self.log.info(f'Finding the device where path {path} is located')
+
+        # get disk dev name and mount path
+        dev_infos = [(disk.device, path.lstrip(disk.mountpoint)) for disk in disk_partitions(
+        ) if path.startswith(disk.mountpoint) and disk.mountpoint != "/"]
+        # find min
+        devs = [os.path.basename(dev) for dev, _ in sorted(
+            dev_infos, key=lambda s: len(s[1]))]
+
+        if not devs or (len(devs) > 1 and len(devs[0]) == len(devs[1])):
+            raise Exception(f"invalid devices for path {path}: {devs}")
+        self.log.info(f'Found {len(devs)} devices {devs} for path {path}')
+
+        self._path = path
+        self._dev = devs[0]
+        self._count = 0
+
+    def get_io_count(self) -> int:
+        stats = disk_io_counters(perdisk=True)[self._dev]
+        return stats.read_count + stats.write_count
+
+    def keepalive(self):
+        self._count += 1
+        count = self.get_io_count()
+        self.log.info(f"keeping alive {self._count} for cur io {count}")
+        # no buf
+        with open(self._path, 'wb', buffering=0) as f:
+            f.write(bytearray(self._count))
+
+
 class Keeper:
     """
     让磁盘保持活动一段时间后再休眠。
@@ -19,80 +52,58 @@ class Keeper:
     在长时间没有io后停止写文件将自动休眠
     """
 
-    def __init__(self, path, idle_interval, alive_interval) -> None:
+    def __init__(self, idle_interval, alive_interval) -> None:
+        self._interval = alive_interval
+        self._idle_interval = timedelta(seconds=idle_interval)
+        self._alive_interval = timedelta(seconds=alive_interval)
         self.log = logging.getLogger(__name__)
-        self.keepalive_count = 0
 
-        self.interval = 5
-
-        self.idle_interval = timedelta(seconds=idle_interval)
-        self.alive_interval = timedelta(seconds=alive_interval)
-
-        self.path = path
-
-        # get disk dev name and mount path
-        devinfos = [(disk.device, path.lstrip(disk.mountpoint)) for disk in disk_partitions(
-        ) if path.startswith(disk.mountpoint) and disk.mountpoint != "/"]
-        # find min
-        devs = [os.path.basename(x[0]) for x in sorted(
-            devinfos, key=lambda s: len(s[1]))]
-        if not devs or (len(devs) > 1 and len(devs[0]) == len(devs[1])):
-            raise Exception(f"invalid devices for path {path}: {devs}")
-        self.dev = devs[0]
-        self.log.info(f"found device {self.dev} for {path}")
-
-    def keepalive(self):
-        # no buf
-        with open(self.path, 'wb', buffering=0) as f:
-            self.keepalive_count += 1
-            count = self.get_io_count()
-            self.log.info(
-                f"keeping alive {self.keepalive_count} for io {count}")
-            f.write(bytearray(self.keepalive_count))
-
-    def run(self):
-        is_idle = False
-        last_time = datetime.min
-        start_time = datetime.min
-        last_count = self.get_io_count()
+    def run(self, disk: AliveDisk):
         self.log.info(
-            f"running alive service with idle interval {self.idle_interval.seconds}, alive interval {self.alive_interval.seconds}")
+            f"running alive service with interval {self._interval}, idle interval {self._idle_interval.seconds}, alive interval {self._alive_interval.seconds}")
+
+        last_io_time = datetime.now()
+        last_io_count = disk.get_io_count()
+        cur_io_count = last_io_count
+        is_idle = False
+
         while True:
-            count = self.get_io_count()
+            cur_io_count = disk.get_io_count()
             now = datetime.now()
-            if count > last_count:
+
+            if cur_io_count > last_io_count:
                 # ignore io in alive_interval
-                if now > (last_time + self.alive_interval):
-                    self.log.debug(f"found effective new io count {count}")
-                    start_time = now
-                    last_time = now
-                    is_idle = False
+                self.log.debug(
+                    f'found new io {cur_io_count} from last io {last_io_count}')
+                last_io_time = now
+                is_idle = False
+            # keep alive interval
+            elif now > (last_io_time + self._alive_interval) and now <= (last_io_time + self._idle_interval):
+                disk.keepalive()
+                # update keepalive's io count
+                cur_io_count = disk.get_io_count()
+                self.log.debug(
+                    f'keepalived io {cur_io_count} from last io {last_io_count}')
             else:
                 # too idle
-                if now > (start_time + self.idle_interval):
-                    if not is_idle:
-                        self.log.info(
-                            f"idle waitting {self.idle_interval.seconds}")
-                    is_idle = True
-                # keep alive interval
-                elif now > (last_time + self.alive_interval):
-                    self.keepalive()
-                    last_time = datetime.now()
-            sleep(self.interval)
-            last_count = count
+                if not is_idle:
+                    self.log.info(
+                        f'Idling at io {cur_io_count} after {(now - last_io_time).seconds}s from last io {last_io_count}')
+                else:
+                    self.log.debug(
+                        f'Idling at io {cur_io_count} for last io {last_io_count}')
+                is_idle = True
 
-    def get_io_count(self):
-        stats = disk_io_counters(perdisk=True)[self.dev]
-        return stats.read_count + stats.write_count
+            sleep(self._interval)
+            last_io_count = cur_io_count
 
 
-if __name__ == "__main__":
-    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
-                        level=logging.INFO,
-                        datefmt='%Y-%m-%d %H:%M:%S')
+def main():
     parser = argparse.ArgumentParser(description='Optional app description')
-    parser.add_argument('-i', '--idle-interval', type=int, required=True,)
-    parser.add_argument('-a', '--alive-interval', type=int, required=True,)
+    parser.add_argument('-i', '--idle-interval', type=int,
+                        required=True, help='最大的保活时间，一旦程序保活达到时间后将不再保活')
+    parser.add_argument('-a', '--alive-interval', type=int,
+                        required=True, help='磁盘两次io的间隔时间，应该保证在这间隔内没有io磁盘不会休眠')
     parser.add_argument(
         'path', type=str, help='to write the file for keepalive the disk')
     args = parser.parse_args()
@@ -100,5 +111,40 @@ if __name__ == "__main__":
     if not args.idle_interval or not args.alive_interval or not args.path:
         raise Exception(f"has empty args: {args}")
 
-    o = Keeper(args.path, args.idle_interval, args.alive_interval)
-    o.run()
+    disk = AliveDisk(args.path)
+    Keeper(args.idle_interval, args.alive_interval).run(disk)
+
+
+class AliveDiskTest(AliveDisk):
+    def __init__(self, counts) -> None:
+        super(AliveDiskTest, self)
+        self._io_count_idx = 0
+        self._io_counts = counts
+        pass
+
+    def keepalive(self):
+        # self.keepalive_count += 1
+        for i in range(self._io_count_idx, len(self._io_counts)):
+            self._io_counts[i] += 1
+        # self.log.info(f'keepalive plus 1: {self._io_counts}')
+        pass
+
+    def get_io_count(self) -> int:
+        c = self._io_counts[self._io_count_idx]
+        self._io_count_idx += 1
+        return c
+
+
+def test():
+    counts = [1, 1, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 8, 9, 9, 9,
+              9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10]
+    disk = AliveDiskTest(counts)
+    Keeper(5, 2).run(disk)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
+                        level=logging.INFO,
+                        datefmt='%Y-%m-%d %H:%M:%S')
+    main()
+    # test()
