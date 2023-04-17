@@ -33,13 +33,24 @@ class AliveDisk:
         stats = disk_io_counters(perdisk=True)[self._dev]
         return stats.read_count + stats.write_count
 
-    def keepalive(self):
+    def keepalive(self, shake=None):
+        """
+        shake 将会影响保活时输出到磁盘的内容长度
+        """
         self._count += 1
+        content = str(self._count)
+        if shake and shake > len(content):
+            content = content.zfill(shake)
+
         count = self.get_io_count()
-        self.log.info(f"keeping alive {self._count} for cur io {count}")
+        self.log.info(f"keeping alive {content} for cur io {count}")
         # no buf
-        with open(self._path, 'wb', buffering=0) as f:
-            f.write(bytearray(self._count))
+        with open(self._path, 'w') as f:
+            f.write(content)
+            # flush cache
+            f.flush()
+            # sync to disk
+            os.fsync(f)
 
 
 class Keeper:
@@ -50,38 +61,52 @@ class Keeper:
 
     当硬盘活动时不会写文件，否则在一段时间内没有发现io时主动写入文件保持活动，
     在长时间没有io后停止写文件将自动休眠
+
+    使用shake可以减少对一次少量的磁盘io的检查，只有在间隔时间内的io超过shake才会启动保活
     """
 
-    def __init__(self, idle_interval, alive_interval) -> None:
+    def __init__(self, idle_interval, alive_interval, shake=0) -> None:
         self._interval = alive_interval
         self._idle_interval = timedelta(seconds=idle_interval)
         self._alive_interval = timedelta(seconds=alive_interval)
         self.log = logging.getLogger(__name__)
+        self._shake = shake
 
     def run(self, disk: AliveDisk):
         self.log.info(
-            f"running alive service with interval {self._interval}, idle interval {self._idle_interval.seconds}, alive interval {self._alive_interval.seconds}")
+            f"running alive service with idle interval {self._idle_interval.seconds}, alive interval {self._alive_interval.seconds}")
 
         last_io_time = datetime.now()
         last_io_count = disk.get_io_count()
         cur_io_count = last_io_count
+        keepalived = False
         is_idle = False
 
         while True:
             cur_io_count = disk.get_io_count()
             now = datetime.now()
-
-            if cur_io_count > last_io_count:
+            if cur_io_count > last_io_count + self._shake:
                 # ignore io in alive_interval
                 self.log.debug(
                     f'found new io {cur_io_count} from last io {last_io_count}')
+                if keepalived:
+                    self.log.info(
+                        f'reset keepalive timing for new io {cur_io_count}')
+
                 last_io_time = now
                 is_idle = False
+                keepalived = False
             # keep alive interval
             elif now > (last_io_time + self._alive_interval) and now <= (last_io_time + self._idle_interval):
-                disk.keepalive()
+                disk.keepalive(shake=self._shake)
+
+                new_io_count = disk.get_io_count()
+                # 防止io被缓存在sleep后生效导致一直重置last_io_time作为新io
+                assert cur_io_count < new_io_count, f'Unchanged keepalive io {cur_io_count} before and after {new_io_count}'
                 # update keepalive's io count
-                cur_io_count = disk.get_io_count()
+                cur_io_count = new_io_count
+                keepalived = True
+
                 self.log.debug(
                     f'keepalived io {cur_io_count} from last io {last_io_count}')
             else:
@@ -112,7 +137,7 @@ def main():
         raise Exception(f"has empty args: {args}")
 
     disk = AliveDisk(args.path)
-    Keeper(args.idle_interval, args.alive_interval).run(disk)
+    Keeper(args.idle_interval, args.alive_interval, shake=5).run(disk)
 
 
 class AliveDiskTest(AliveDisk):
