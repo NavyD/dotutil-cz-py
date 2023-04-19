@@ -12,7 +12,7 @@ from psutil import disk_io_counters, disk_partitions
 class AliveDisk:
     def __init__(self, path: str) -> None:
         self.log = logging.getLogger(__name__)
-        self.log.info(f'Finding the device where path {path} is located')
+        self.log.debug(f'Finding the device where path {path} is located')
 
         # get disk dev name and mount path
         dev_infos = [(disk.device, path.lstrip(disk.mountpoint)) for disk in disk_partitions(
@@ -23,7 +23,7 @@ class AliveDisk:
 
         if not devs or (len(devs) > 1 and len(devs[0]) == len(devs[1])):
             raise Exception(f"invalid devices for path {path}: {devs}")
-        self.log.info(f'Found {len(devs)} devices {devs} for path {path}')
+        self.log.debug(f'Found {len(devs)} devices {devs} for path {path}')
 
         self._path = path
         self._dev = devs[0]
@@ -39,7 +39,7 @@ class AliveDisk:
         """
         self._count += 1
         content = str(self._count)
-        if shake and shake > len(content):
+        if shake and shake > 0:
             content = content.zfill(shake)
 
         count = self.get_io_count()
