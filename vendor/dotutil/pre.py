@@ -5,12 +5,12 @@ import re
 import sys
 from pathlib import Path
 from shutil import which
-from subprocess import DEVNULL, check_call
+from subprocess import DEVNULL, check_call, run
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
 from util import (ChezmoiArgs, SetupExcetion, elevate_copy_file,  # noqa: E402
-                  has_changed, is_windows)
+                  has_changed, has_changed_su, is_windows)
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root
@@ -53,15 +53,26 @@ def sync_from_root(args: ChezmoiArgs):
         if path.is_file():
             root_path = Path(
                 "/").joinpath(os.path.relpath(path, mapped_root_dir))
+
+            privated_path = False
+            try:
+                root_path.exists()
+            except PermissionError:
+                logging.info(f'checking exists for private {str(root_path)}')
+                privated_path = True
+                privated_path_exists = run(
+                    ['sudo', 'test', '-e', root_path]).returncode == 0
+
             # remove mapped root path if root path not exists
-            if not root_path.exists():
+            if (privated_path and not privated_path_exists) or (not privated_path and not root_path.exists()):
                 logging.info(f'removing {path} for non exists {root_path}')
                 os.remove(path)
                 continue
 
             changed = None
             try:
-                changed = has_changed(root_path, path)
+                changed = has_changed(
+                    root_path, path) if not privated_path else has_changed_su(root_path, path)
             except PermissionError:
                 logging.error(
                     f'skipped copying file {path} for permission error')

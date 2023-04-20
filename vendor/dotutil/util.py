@@ -23,7 +23,7 @@ def get_digest(path: Path) -> str:
             while n := f.readinto(buf):
                 h.update(buf[:n])
     except PermissionError as e:
-        logging.info(
+        logging.debug(
             f"try using sudo to read file {path} without read permission")
         try:
             s = check_output(
@@ -34,6 +34,14 @@ def get_digest(path: Path) -> str:
             raise e
         h.update(s)
     return h.hexdigest()
+
+
+def has_changed_su(src: Path, dst: Path) -> bool:
+    def get_mode(path):
+        return check_output(['sudo', 'stat', '--format', '%a', path], text=True)
+    smode = get_mode(src)
+    dmode = get_mode(dst)
+    return smode != dmode or get_digest(src) != get_digest(dst)
 
 
 def has_changed(src: Path, dst: Path) -> bool:

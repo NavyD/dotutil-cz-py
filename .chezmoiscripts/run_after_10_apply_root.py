@@ -11,7 +11,7 @@ from typing import Iterable, Set
 sys.path.append(
     str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
 from util import (ChezmoiArgs, SetupExcetion,  # noqa: E402
-                  elevate_copy_file, has_changed, is_windows)
+                  elevate_copy_file, has_changed, has_changed_su, is_windows)
 
 """
 在chezmoi更新.root文件后比较/root并应用到/root中
@@ -33,6 +33,24 @@ def copy_to_root(mapped_root: Path):
     for path in mapped_root.rglob("*"):
         if path.is_file() or path.is_symlink():
             root_path = get_root_path(path, mapped_root)
+
+            try:
+                root_path.exists()
+            except PermissionError:
+                logging.info(f'checking exists for private {str(root_path)}')
+                privated_path_exists = run(
+                    ['sudo', 'test', '-e', root_path]).returncode == 0
+                privated_path_is_file = run(
+                    ['sudo', 'test', '-f', root_path]).returncode == 0
+                if not privated_path_exists:
+                    elevate_copy(path, root_path)
+                elif privated_path_is_file:
+                    if has_changed_su(path, root_path):
+                        elevate_copy(path, root_path)
+                else:
+                    raise SetupExcetion(f"invalid file {root_path}")
+                continue
+
             if not root_path.exists():
                 elevate_copy(path, root_path)
             elif root_path.is_file():
