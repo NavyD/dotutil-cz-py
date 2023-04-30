@@ -119,7 +119,7 @@ def check_passhole(args: ChezmoiArgs):
             for path in paths:
                 if path.suffix == '.tmpl':
                     try:
-                        with open(path) as file:
+                        with open(path, encoding='utf8') as file:
                             for line in file:
                                 if pat.search(line):
                                     has_ph = True
@@ -129,7 +129,7 @@ def check_passhole(args: ChezmoiArgs):
                         if has_ph:
                             break
                     except UnicodeDecodeError:
-                        logging.debug(
+                        logging.info(
                             f'skipped check passhole for non-text {path}')
                         continue
     else:
