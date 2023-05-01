@@ -36,7 +36,6 @@ def install_winget(pkgs: Set[str], ipkgs: Set[str]):
                 continue
             else:
                 raise e
-    logging.info(f'checking {len(pkgs)} packages if installed')
     pkgs_un = pkgs - winget_installed(pkgs)
     logging.info(
         f'installing winget uninstalled {len(pkgs_un)} packages for orignal {len(pkgs)} packages: {" ".join(pkgs_un)}')
@@ -76,7 +75,7 @@ def winget_install_windows_exporter():
                 ])
 
 
-def winget_installed(pkgs: Set[str], wait_timeout=5) -> Set[str]:
+def winget_installed(pkgs: Set[str], wait_timeout=30) -> Set[str]:
     """
     并发winget list -q 进程查询每个pkg是否已安装并返回安装的pkg。
     """
@@ -89,11 +88,15 @@ def winget_installed(pkgs: Set[str], wait_timeout=5) -> Set[str]:
             p.kill()
         return None
 
+    logging.info(
+        f'Checking for {len(pkgs)} packages waiting timeout {wait_timeout}s for installation')
     pkgs = list(pkgs)
     res = set()
     step = POOL._max_workers
-    # 限制一次启动太多过程
+    # 限制一次启动太多进程
     for names in [pkgs[x:x + step] for x in range(0, len(pkgs), step)]:
+        logging.debug(
+            f'Starting {len(names)} winget processes to check if the packages is installed')
         procs = [(name, Popen(['winget', 'list', '-q', name], stdout=DEVNULL))
                  for name in names]
         res.update(pkg for pkg in POOL.map(wait_status, procs) if pkg)
@@ -111,6 +114,11 @@ irm get.scoop.sh | iex
 
 scoop bucket add extras
 scoop bucket add nerd-fonts
+
+# disable aria2 warn
+scoop config aria2-warning-enabled false
+# retry 3
+scoop config aria2-retry-wait 3
 """
                     ])
 
@@ -158,7 +166,7 @@ winget_pkgs = {
     # [SPACEDESK DRIVER SOFTWARE for Windows PRIMARY PC (server)](https://www.spacedesk.net/)
     'Datronicsoft.SpacedeskDriver.Server',
     # Restart to take effect [A lightweight utility which can automatically switch the display state of the Windows Taskbar.](https://github.com/ChanpleCai/SmartTaskbar)
-    'chanplecai.smarttaskbar',
+    '9PJM69MPS6T9',
     # [Automatically switches between the dark and light theme of Windows 10 and Windows 11](https://github.com/AutoDarkMode/Windows-Auto-Night-Mode)
     'Armin2208.WindowsAutoNightMode',
     'Telegram.TelegramDesktop',
@@ -194,14 +202,14 @@ winget_pkgs = {
     # dev env #########
     # [A faster, better and more stable redis desktop manager [GUI client], compatible with Linux, Windows, Mac. What's more, it won't crash when loading massive keys.](https://github.com/qishibo/AnotherRedisDesktopManager)
     'qishibo.AnotherRedisDesktopManager',
+    # 自定义安装位置和选择ffmp
+    # [ScreenToGif allows you to record a selected area of your screen, edit and save it as a gif or video.](https://github.com/NickeManarin/ScreenToGif)
+    '9N3SQK8PDS8G',
 }
 
 winget_i_pkgs = {
     # 自定义右键菜单
     'Microsoft.VisualStudioCode',
-    # 自定义安装位置和选择ffmp
-    # [ScreenToGif allows you to record a selected area of your screen, edit and save it as a gif or video.](https://github.com/NickeManarin/ScreenToGif)
-    'NickeManarin.ScreenToGif',
     # 选择默认音乐等 https://m.music.163.com
     'NetEase.CloudMusic',
     # 安装WHP 激活YF390-0HF8P-M81RQ-2DXQE-M2UT6。 [VMware Workstation Pro 是行业标准桌面 Hypervisor，使用它可在 Windows 或 Linux 桌面上运行 Windows、Linux 和 BSD 虚拟机。](https://www.vmware.com/cn/products/workstation-pro.html)
@@ -258,7 +266,8 @@ scoop_global_pkgs = {
     'SarasaGothic-ttc',  # or `SarasaGothic-SC`
 }
 
-if __name__ == '__main__':
+
+def main():
     level = logging.ERROR
     args = ChezmoiArgs(os.environ['CHEZMOI_ARGS'])
     if args.has_debug():
@@ -267,6 +276,14 @@ if __name__ == '__main__':
         level = logging.INFO
     config_log(level=level)
 
-    install_winget(winget_pkgs, winget_i_pkgs)
-    setup_scoop(scoop_pkgs, scoop_global_pkgs)
-    winget_install_windows_exporter()
+    try:
+        install_winget(winget_pkgs, winget_i_pkgs)
+        setup_scoop(scoop_pkgs, scoop_global_pkgs)
+        winget_install_windows_exporter()
+    except KeyboardInterrupt:
+        print('Interrupt by user', file=sys.stderr)
+        exit(1)
+
+
+if __name__ == '__main__':
+    main()
