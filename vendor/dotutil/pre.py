@@ -58,7 +58,7 @@ def sync_from_root(args: ChezmoiArgs):
             try:
                 root_path.exists()
             except PermissionError:
-                logging.info(f'checking exists for private {str(root_path)}')
+                logging.debug(f'checking exists for private {str(root_path)}')
                 privated_path = True
                 privated_path_exists = run(
                     ['sudo', 'test', '-e', root_path]).returncode == 0
@@ -148,7 +148,8 @@ def check_super_permission(args: ChezmoiArgs):
         pass
     elif which('sudo') and args.mapped_root().is_dir() and (not target_paths or any(args.mapped_root() in p.parents for p in target_paths)):
         cmd = ['sudo', 'echo']
-        logging.info(f'checking super permission for {target_paths}')
+        logging.info(
+            f'checking super permission for {",".join(str(p) for p in target_paths)}')
         check_call(cmd, stdout=DEVNULL)
 
 
@@ -184,12 +185,9 @@ def print_env():
 def main():
     s = os.environ['CHEZMOI_ARGS']
     args = ChezmoiArgs(s)
-    if args.has_debug() or args.has_verbose():
+    if args.has_debug():
         print(f'parsed chezmoi {args.__dict__} for args `{s}`')
     args.init_log()
-
-    if args.has_debug():
-        print_env()
 
     check_passhole(args)
     check_super_permission(args)

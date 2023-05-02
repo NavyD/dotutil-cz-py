@@ -37,7 +37,7 @@ def copy_to_root(mapped_root: Path):
             try:
                 root_path.exists()
             except PermissionError:
-                logging.info(f'checking exists for private {str(root_path)}')
+                logging.debug(f'checking exists for private {str(root_path)}')
                 privated_path_exists = run(
                     ['sudo', 'test', '-e', root_path]).returncode == 0
                 privated_path_is_file = run(
@@ -108,7 +108,7 @@ class RootCleaner:
             p, self._mapped_root).exists())
 
         # save current root list and skipped for next apply
-        self.log.info(
+        self.log.debug(
             f"saving rest {len(rest_paths)} paths to {self._rootlist_path} after apply")
         with open(self._rootlist_path, 'w') as f:
             for path in rest_paths:
@@ -237,15 +237,16 @@ def sync(args: ChezmoiArgs):
         logging.warning(
             f"skipped apply mapped root {mapped_root} is not dir")
     elif args.subcommand() != 'apply':
-        logging.info(f'skipped apply for subcommand: {args.subcommand()}')
+        logging.debug(f'skipped apply for subcommand: {args.subcommand()}')
     # only run once when apply post and run script
     elif not target_paths and Path(__file__).name.startswith('run_after_'):
-        logging.info('skipped apply for chezmoi scripts')
+        logging.debug('skipped apply for chezmoi scripts')
     # target is not a sub path or self of mapped root
     elif target_paths and all(mapped_root not in p.parents and mapped_root != p for p in target_paths):
         logging.info(
             f'skipped apply non mapped root {mapped_root} in target paths: {target_paths}')
     else:
+        logging.info(f'syncing {mapped_root} to /')
         copy_to_root(mapped_root)
         RootCleaner(mapped_root, rootlist_path,
                     args.bin_path()).clean(target_paths)
