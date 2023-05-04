@@ -13,7 +13,7 @@ from typing import Set
 # import util
 sys.path.append(
     str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
-from util import ChezmoiArgs, config_log  # noqa: E402
+from util import ChezmoiArgs  # noqa: E402
 
 POOL = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() + 1)
 
@@ -268,13 +268,8 @@ scoop_global_pkgs = {
 
 
 def main():
-    level = logging.ERROR
     args = ChezmoiArgs(os.environ['CHEZMOI_ARGS'])
-    if args.has_debug():
-        level = logging.DEBUG
-    elif args.has_verbose():
-        level = logging.INFO
-    config_log(level=level)
+    args.init_log()
 
     try:
         install_winget(winget_pkgs, winget_i_pkgs)
