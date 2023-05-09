@@ -11,7 +11,7 @@ from typing import Iterable, Set
 sys.path.append(
     str(Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
 from util import (ChezmoiArgs, SetupExcetion,  # noqa: E402
-                  elevate_copy_file, has_changed, has_changed_su, is_windows)
+                  elevate_copy_file, has_changed, has_changed_su, is_windows, paths2str)
 
 """
 在chezmoi更新.root文件后比较/root并应用到/root中
@@ -48,7 +48,7 @@ def copy_to_root(mapped_root: Path):
                     if has_changed_su(path, root_path):
                         elevate_copy(path, root_path)
                 else:
-                    raise SetupExcetion(f"invalid file {root_path}")
+                    raise SetupExcetion(f"invalid file {paths2str(root_path)}")
                 continue
 
             if not root_path.exists():
@@ -59,13 +59,13 @@ def copy_to_root(mapped_root: Path):
                     changed = has_changed(path, root_path)
                 except PermissionError as e:
                     logging.error(
-                        f'Checking for changes fails with permission issues on files {path} -> {root_path}: {e}')
+                        f'Checking for changes fails with permission issues on files {paths2str(path)} -> {paths2str(root_path)}: {e}')
                     raise SetupExcetion(e)
                 if changed:
                     elevate_copy(path, root_path)
             else:
-                raise SetupExcetion(f"invalid file {root_path}")
-    logging.info(f"copied {diff_count} files from {mapped_root}")
+                raise SetupExcetion(f"invalid file {paths2str(root_path)}")
+    logging.info(f"copied {diff_count} files from {paths2str(mapped_root)}")
 
 
 class RootCleaner:
@@ -80,7 +80,7 @@ class RootCleaner:
         old_removable_mapped_paths = set(Path(line) for line in self._rootlist_path.read_text().splitlines(
         ) if line.strip()) if self._rootlist_path.is_file() else set()
         self.log.debug(
-            f'loaded removable mapped root {len(old_removable_mapped_paths)} paths: {", ".join([str(p) for p in old_removable_mapped_paths])}')
+            f'loaded removable mapped root {len(old_removable_mapped_paths)} paths: {paths2str(old_removable_mapped_paths)}')
         self._old_removable_mapped_paths = old_removable_mapped_paths
 
     def clean(self, target_paths: Iterable[Path]):
@@ -97,7 +97,7 @@ class RootCleaner:
             f'trying to remove exists root {len(root_paths)} paths for mapped root {len(removable_paths)} paths')
         removed_root_paths = self.confirm_rm(root_paths)
         self.log.debug(
-            f'removed {len(removed_root_paths)} files: {" ".join(str(p) for p in removed_root_paths)}')
+            f'removed {len(removed_root_paths)} files: {paths2str(removed_root_paths)}')
 
         removed_mapped_root_paths = set(
             self.root_target_path(p) for p in removed_root_paths)
@@ -119,7 +119,7 @@ class RootCleaner:
 
     def find_removable_mapped_paths(self, target_paths: Iterable[Path]) -> Set[Path]:
         self.log.info(
-            f'finding all removable paths for target paths {" ".join(str(p) for p in target_paths)} in old mapped {len(self._old_removable_mapped_paths)} paths')
+            f'finding all removable paths for target paths {paths2str(target_paths)} in old mapped {len(self._old_removable_mapped_paths)} paths')
 
         target_mapped_paths = None
         if target_paths:
@@ -144,7 +144,7 @@ class RootCleaner:
             elif path.is_dir() and path not in exact_paths:
                 exact_paths[path] = self.is_exact(path)
         self.log.debug(
-            f'found removable {len(removable_paths)} paths for non exist files: {" ".join(str(p) for p in removable_paths)}')
+            f'found removable {len(removable_paths)} paths for non exist files: {paths2str(removable_paths)}')
 
         # 对于exact目录找到对应root中多余存在的文件
         for path in exact_paths:
@@ -154,7 +154,7 @@ class RootCleaner:
                     path, self._mapped_root).glob('*')}
                 paths = virtual_mapped_root_files - mapped_root_files
                 self.log.debug(
-                    f'found removable {len(paths)} paths for mapped exact {path}: {" ".join(str(p) for p in paths)}')
+                    f'found removable {len(paths)} paths for mapped exact {paths2str(path)}: {paths2str(paths)}')
                 removable_paths.update(paths)
 
         return removable_paths
@@ -166,7 +166,7 @@ class RootCleaner:
             return self._exact_pat.match(Path(p.stdout.strip()).name) is not None
         else:
             self.log.debug(
-                f'failed to run source path {path} on status {p.returncode}: {p.stderr.strip()}')
+                f'failed to run source path {paths2str(path)} on status {p.returncode}: {p.stderr.strip()}')
             return False
 
     def confirm_rm(self, paths: Set[Path]) -> Set[Path]:
@@ -182,7 +182,7 @@ class RootCleaner:
                     if not remove_all:
                         while True:
                             print(
-                                f"whether to remove root file {path}?[remove, all-remove, skip]:", end='', flush=True)
+                                f"whether to remove root file {paths2str(path)}?[remove, all-remove, skip]:", end='', flush=True)
                             line = stdin.readline().strip()
                             if "remove".startswith(line):
                                 pass
@@ -202,11 +202,11 @@ class RootCleaner:
                         # skipped if failed to remove
                         except CalledProcessError as e:
                             self.log.error(
-                                f'failed to remove {path}: returncode={e.returncode}')
+                                f'failed to remove {paths2str(path)}: returncode={e.returncode}')
                         except SetupExcetion:
                             pass
                     else:
-                        self.log.info(f"skipped remove {path}")
+                        self.log.info(f"skipped remove {paths2str(path)}")
             except KeyboardInterrupt:
                 self.log.warning(
                     f'skipping removable {len(paths) - len(removed_paths)} for Interrupt')
@@ -215,16 +215,16 @@ class RootCleaner:
 
     def elevate_rm(self, path: Path):
         if not path.exists():
-            self.log.warning(f"ignore not found root file {path}")
+            self.log.warning(f"ignore not found root file {paths2str(path)}")
             return
         elif path == Path(os.sep):
-            raise SetupExcetion(f"invalid path {path}")
+            raise SetupExcetion(f"invalid path {paths2str(path)}")
 
         if is_windows():
             cmd = ['gsudo', 'del', str(path)]
         else:
             cmd = ['sudo', 'rm', '-rf', str(path)]
-        self.log.info(f'removing {path} with command: {cmd}')
+        self.log.info(f'removing {paths2str(path)} with command: {cmd}')
         check_call(cmd)
 
 
@@ -235,7 +235,7 @@ def sync(args: ChezmoiArgs):
 
     if not mapped_root.is_dir():
         logging.warning(
-            f"skipped apply mapped root {mapped_root} is not dir")
+            f"skipped apply mapped root {paths2str(mapped_root)} is not dir")
     elif args.subcommand() != 'apply':
         logging.debug(f'skipped apply for subcommand: {args.subcommand()}')
     # only run once when apply post and run script
@@ -244,9 +244,9 @@ def sync(args: ChezmoiArgs):
     # target is not a sub path or self of mapped root
     elif target_paths and all(mapped_root not in p.parents and mapped_root != p for p in target_paths):
         logging.info(
-            f'skipped apply non mapped root {mapped_root} in target paths: {target_paths}')
+            f'skipped apply non mapped root {paths2str(mapped_root)} in target paths: {paths2str(target_paths)}')
     else:
-        logging.info(f'syncing {mapped_root} to /')
+        logging.info(f'syncing {paths2str(mapped_root)} to /')
         copy_to_root(mapped_root)
         RootCleaner(mapped_root, rootlist_path,
                     args.bin_path()).clean(target_paths)

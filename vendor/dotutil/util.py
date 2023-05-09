@@ -132,6 +132,12 @@ def dyn_import(st: str):
         exec(st, sys._getframe(1).f_globals)
 
 
+def paths2str(paths, delimiter=',') -> str:
+    if type(paths) is not list:
+        paths = [paths]
+    return delimiter.join(str(p) for p in paths)
+
+
 class ChezmoiArgs:
     def __init__(self, args=None) -> None:
         if not args:

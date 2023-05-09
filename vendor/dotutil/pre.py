@@ -10,7 +10,7 @@ from subprocess import DEVNULL, check_call, run
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
 from util import (ChezmoiArgs, SetupExcetion, elevate_copy_file,  # noqa: E402
-                  has_changed, has_changed_su, is_windows)
+                  has_changed, has_changed_su, is_windows, paths2str)
 
 """
 思路：对于root文件在home保存一份映射$HOME/.root
@@ -38,16 +38,18 @@ def sync_from_root(args: ChezmoiArgs):
     mapped_root_dir = args.mapped_root()
     target_paths = args.target_paths()
     if target_paths and all(mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths):
-        logging.info(
-            f'skipped copy root to {mapped_root_dir} for target paths: {target_paths}')
+        logging.debug(
+            f'skipped copy root to {paths2str(mapped_root_dir)} for target paths: {paths2str(target_paths)}')
         return
     if not mapped_root_dir.exists():
-        logging.info(f"skipped copy mapped root is not dir: {mapped_root_dir}")
+        logging.info(
+            f"skipped copy mapped root is not dir: {paths2str(mapped_root_dir)}")
         return
     elif mapped_root_dir.is_file():
-        raise SetupExcetion(f"mapped root is not dir: {mapped_root_dir}")
+        raise SetupExcetion(
+            f"mapped root is not dir: {paths2str(mapped_root_dir)}")
 
-    logging.info(f'syncing root to {mapped_root_dir} if changed')
+    logging.info(f'syncing root to {paths2str(mapped_root_dir)} if changed')
     count = 0
     for path in mapped_root_dir.rglob("*"):
         if path.is_file():
@@ -65,7 +67,8 @@ def sync_from_root(args: ChezmoiArgs):
 
             # remove mapped root path if root path not exists
             if (privated_path and not privated_path_exists) or (not privated_path and not root_path.exists()):
-                logging.info(f'removing {path} for non exists {root_path}')
+                logging.info(
+                    f'removing {paths2str(path)} for non exists {paths2str(root_path)}')
                 os.remove(path)
                 continue
 
@@ -75,9 +78,10 @@ def sync_from_root(args: ChezmoiArgs):
                     root_path, path) if not privated_path else has_changed_su(root_path, path)
             except PermissionError:
                 logging.error(
-                    f'skipped copying file {path} for permission error')
+                    f'skipped copying file {paths2str(path)} for permission error')
             if changed:
-                logging.info(f"copying changed file {root_path} -> {path}")
+                logging.info(
+                    f"copying changed file {paths2str(root_path)} -> {paths2str(path)}")
                 elevate_copy_file(root_path, path)
                 count += 1
     logging.info(f"found changed {count} files")
@@ -100,7 +104,7 @@ def check_passhole(args: ChezmoiArgs):
         # filtered if src path is none
         src_paths = [p for p in map(
             lambda p: args.get_source_path(p), args.target_paths()) if p]
-        logging.debug(f'finding passhole template in {src_paths}')
+        logging.debug(f'finding passhole template in {paths2str(src_paths)}')
 
         if src_paths:
             pat = re.compile(r'\{\{.*(passhole(\s+".+"){2}).*\}\}')
@@ -124,13 +128,13 @@ def check_passhole(args: ChezmoiArgs):
                                 if pat.search(line):
                                     has_ph = True
                                     logging.info(
-                                        f'found passhole template in {path}')
+                                        f'found passhole template in {paths2str(path)}')
                                     break
                         if has_ph:
                             break
                     except UnicodeDecodeError:
                         logging.info(
-                            f'skipped check passhole for non-text {path}')
+                            f'skipped check passhole for non-text {paths2str(path)}')
                         continue
     else:
         has_ph = True
@@ -149,7 +153,7 @@ def check_super_permission(args: ChezmoiArgs):
     elif which('sudo') and args.mapped_root().is_dir() and (not target_paths or any(args.mapped_root() in p.parents for p in target_paths)):
         cmd = ['sudo', 'echo']
         logging.info(
-            f'checking super permission for {",".join(str(p) for p in target_paths)}')
+            f'checking super permission for {paths2str(target_paths)}')
         check_call(cmd, stdout=DEVNULL)
 
 
@@ -173,7 +177,7 @@ def check_restic(args: ChezmoiArgs):
         # # allow this `chezmoi apply ~/.config/passhole.ini` pass
         if not p.exists() and len(args.target_paths()) != 1 and p not in args.target_paths():
             print(
-                f'not found restic bin in {p}. please run `chezmoi apply {p}` at first')
+                f'not found restic bin in {paths2str(p)}. please run `chezmoi apply {paths2str(p)}` at first')
             exit(1)
 
 
