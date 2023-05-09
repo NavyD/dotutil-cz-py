@@ -146,7 +146,7 @@ def reset_restic_caps(bin: str):
 
 # {{- if .has_restic }}
 def main():
-    level = logging.DEBUG
+    level = logging.INFO if 'CHEZMOI_VERBOSE' in os.environ else logging.ERROR
     config_log(level=level)
 
     envfile = Path.home().joinpath('.autorestic.env')
