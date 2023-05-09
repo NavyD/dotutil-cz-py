@@ -1,74 +1,168 @@
 #!/usr/bin/env python3
+import json
 import logging
 import os
+from shutil import which
+import socket
 import sys
 from pathlib import Path
-from subprocess import PIPE, check_call, run
+from subprocess import PIPE, Popen, check_call, check_output, run
+from typing import Generator, List
+
+import dotenv
 
 # import util
 sys.path.append('{{.chezmoi.sourceDir}}/vendor/dotutil')
 from util import config_log  # noqa: E402
 
 
-def is_restored(path: Path):
-    try:
-        return (path.is_dir() and next(os.scandir(path), None)) or path.is_file()
-    except PermissionError:
-        proc = run(['sudo', 'ls', '-A', str(path)], stdout=PIPE)
-        return proc.returncode == 0 and proc.stdout
+class Restic:
+    def __init__(self, bin: str, env=None) -> None:
+        self.log = logging.getLogger(__name__)
+        self._bin = Path(bin)
+        if not self._bin.exists():
+            raise Exception('not found restic bin')
+        self._env = os.environ.copy()
+        if env:
+            self.log.debug(f'using restic env: {env}')
+            # restic error: unable to open cache: unable to locate cache directory: neither $XDG_CACHE_HOME nor $HOME are defined
+            self._env.update(env)
+
+    def dump(self, file: Path, snapshot_id='latest', **kwargs) -> Generator[bytes, None, None]:
+        chunk_size = 1024
+        args = [str(self._bin), 'dump']
+        for k, v in kwargs.items():
+            args += [f'--{k}', v]
+        args += [snapshot_id, str(file)]
+        self.log.debug(f'start running command {args}')
+
+        with Popen(args, stdout=PIPE, text=False, env=self._env) as p:
+            with p.stdout as f:
+                self.log.debug(
+                    f"reading the stdout output data of restic process {p.pid} with chunk size={chunk_size}")
+                count = 0
+                while chunk := f.read(chunk_size):
+                    count += len(chunk)
+                    yield chunk
+
+                self.log.debug(
+                    f'read the stdout of restic process {p.pid} for a total of {count} bytes')
+
+    def restore(self, target: Path, include_pats: List[str], snapshot_id='latest', **kwargs):
+        args = ['sudo', '-E', str(self._bin), 'restore',
+                '--target', str(target)]
+        if include_pats:
+            for p in include_pats:
+                args += ['--include', p]
+        for k, v in kwargs.items():
+            args += [f'--{k}', v]
+        args += [snapshot_id]
+        self.log.debug(f'start running command {args}')
+        check_call(args, env=self._env)
 
 
-RESTIC_SRC_PATHS = set([
-    # {{- range $rule := .restic.restore_paths }}
-    '{{.}}',
-    # {{- end}}
-])
-TARGET_PATH = "/"
-HAS_RESTIC = False
-RESTIC_REPOSITORY = None
-RESTIC_PASSWORD = os.environ.get('RESTIC_PASSWORD', None)
-RESTIC_BIN_PATH = None
+def setup_vscode_extensions(restic: Restic, **kwargs):
+    if code_bin := which('code'):
+        logging.debug(f'found vscode bin in {code_bin}')
+    else:
+        raise Exception('not found vscode bin')
 
-# {{- if .has_restic }}
-RESTIC_BIN_PATH = '{{.restic.path}}'
-HAS_RESTIC = True
-RESTIC_REPOSITORY = '{{.restic.repo}}'
-#   {{- if .has_keepass }}
-RESTIC_PASSWORD = '{{- passhole "dotfiles/restic-repo" "Password" -}}'
-#   {{- end }}
-# {{- end }}
+    ex_path = Path(os.environ.get('CHEZMOI_HOME_DIR', str(Path.home()))
+                   ).joinpath('.vscode-server/extensions/extensions.json')
+    logging.info(f'restic dumpping {str(ex_path)}')
+    buf = bytearray()
+    for chunk in restic.dump(ex_path, **kwargs):
+        buf.extend(chunk)
+    logging.debug(f'loading json from {len(buf)} bytes')
+    data = json.loads(buf)
+
+    ids = [o['identifier']['id']
+           for o in data if 'identifier' in o and 'id' in o['identifier']]
+    logging.info(f'found {len(ids)} extensions from restic {str(ex_path)}')
+
+    # Extensions installed on SSH: rpi4:
+    # ahmadalli.vscode-nginx-conf
+    # ...
+    # remove first line
+    # all id name is lower in ext.json, but list ext may be upper
+    list_exts = check_output(
+        [code_bin, '--list-extensions'], text=True).strip().lower()
+    logging.debug(
+        f'found installed {len(list_exts.splitlines()) - 1} extensions')
+
+    logging.info(
+        f'start installing {len([id for id in ids if id not in list_exts])} vsc extensions')
+    for id in ids:
+        if id not in list_exts:
+            logging.info(f'installing vscode extension {id}')
+            check_call([code_bin, '--install-extension', id])
+        else:
+            logging.debug(f'skip installed extension {id}')
 
 
-def main():
-    config_log(
-        level=logging.DEBUG if '{{ has "--verbose" .chezmoi.args | or (has "-v" .chezmoi.args) | default "" }}' else logging.ERROR)
-
-    if not RESTIC_SRC_PATHS:
-        logging.info('skipped restic restore: empty src paths')
-        exit(0)
-
-    if not HAS_RESTIC or not RESTIC_PASSWORD:
-        logging.error('skipped restic restore: not found restic password')
-        exit(0)
-
-    restic_path = RESTIC_BIN_PATH
-    env = os.environ.copy()
-    env['RESTIC_REPOSITORY'] = RESTIC_REPOSITORY
-    env['RESTIC_PASSWORD'] = RESTIC_PASSWORD
+def setup_restore(restic: Restic, src_paths: List[str], dst_path: str, **kwargs):
+    def is_restored(path: Path):
+        try:
+            return (path.is_dir() and next(os.scandir(path), None)) or path.is_file()
+        except PermissionError as e:
+            # remove dep 'ls -A'
+            args = ['sudo', sys.executable, '-c', f"\
+                        from os import scandir;\
+                        from os.path import isdir;\
+                        path = '{str(path)}';\
+                        exit(0 if isdir(path) and next(scandir(path)) else 11)"]
+            logging.debug(
+                f'recheck if {str(path)} is empty dir for Permission: {e}')
+            proc = run(args)
+            if proc.returncode == 0:
+                return True
+            elif proc.returncode != 11:
+                logging.error(
+                    f'failed to check if {str(path)} empty dir with {args}')
+                raise Exception('check is restore failed')
+            else:
+                return False
 
     logging.debug(
-        f'restic restore to {len(RESTIC_SRC_PATHS)} paths: {" ".join(RESTIC_SRC_PATHS)}')
-    for p in RESTIC_SRC_PATHS:
-        path = Path(p)
-        if is_restored(path):
-            logging.debug(f'skip restored path {p}')
-        else:
-            args = ['sudo', '-E', restic_path, 'restore', '--target', TARGET_PATH, '--host',
-                    '{{.chezmoi.hostname}}', '--include', p, 'latest']
-            logging.info(
-                f'restoring to {TARGET_PATH} from restic {p} with command args `{" ".join(args)}`')
-            check_call(args, env=env)
+        f'restic restore to {len(src_paths)} paths: {" ".join(src_paths)}')
+    restore_paths = [src for src in src_paths if not is_restored(Path(src))]
+    logging.info(f'restic restoring {len(restore_paths)} paths to {dst_path}')
+
+    for src in restore_paths:
+        logging.info(f'restoring {src} to {dst_path}')
+        restic.restore(Path(dst_path), src, **kwargs)
+
+
+# {{- if .has_restic }}
+def main():
+    level = logging.INFO
+    config_log(level=level)
+
+    envfile = Path.home().joinpath('.autorestic.env')
+    logging.info(f'loading restic env from {str(envfile)}')
+    env = dotenv.dotenv_values(envfile)
+
+    restic = Restic('{{.restic.path}}', env=env)
+
+    # restic选择不同的快照
+    args = {'host': socket.gethostname()}
+    setup_restore(restic,
+                  [
+                      # {{- range $rule := .restic.restore_paths }}
+                      '{{.}}',
+                      # {{- end}}
+                  ],
+                  "/",
+                  **args)
+    # {{- if lookPath "code" }}
+    setup_vscode_extensions(restic, **args)
+    # {{- end }}
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('Interrupt by user', file=sys.stderr)
+        exit(1)
+# {{- end }}
