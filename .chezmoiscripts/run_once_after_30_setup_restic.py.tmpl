@@ -133,17 +133,34 @@ def setup_restore(restic: Restic, src_paths: List[str], dst_path: str, **kwargs)
         restic.restore(Path(dst_path), src, **kwargs)
 
 
+def reset_restic_caps(bin: str):
+    caps = 'cap_dac_read_search=ep'
+    logging.debug(f'finding capabilities {caps} for {bin}')
+    if caps in check_output(['getcap', bin], text=True):
+        logging.debug('skip reset same capabilities for restic')
+        return
+
+    logging.info(f'adding backup cap: {caps} for restic {bin}')
+    check_call(['sudo', 'setcap', caps, bin])
+
+
 # {{- if .has_restic }}
 def main():
-    level = logging.INFO
+    level = logging.DEBUG
     config_log(level=level)
 
     envfile = Path.home().joinpath('.autorestic.env')
     logging.info(f'loading restic env from {str(envfile)}')
     env = dotenv.dotenv_values(envfile)
 
-    restic = Restic('{{.restic.path}}', env=env)
+    bin = '{{.restic.path}}'
 
+    # {{- if stat .restic.path }}
+    #   reload on config.nix hash: {{ include .restic.path | sha256sum }}
+    # {{- end }}
+    reset_restic_caps(bin)
+
+    restic = Restic(bin, env=env)
     # restic选择不同的快照
     args = {'host': socket.gethostname()}
     setup_restore(restic,
