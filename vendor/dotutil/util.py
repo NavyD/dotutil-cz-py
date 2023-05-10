@@ -9,6 +9,7 @@ from pathlib import Path
 from subprocess import PIPE, CalledProcessError, check_call, check_output, run
 from typing import Dict, Set
 from urllib.request import urlopen
+from collections.abc import Iterable
 
 
 class SetupExcetion(Exception):
@@ -133,7 +134,9 @@ def dyn_import(st: str):
 
 
 def paths2str(paths, delimiter=',') -> str:
-    if type(paths) is not list:
+    # only for iterable type, except str like __getitem__
+    # [In Python, how do I determine if an object is iterable?](https://stackoverflow.com/a/1952481/8566831)
+    if not isinstance(paths, Iterable):
         paths = [paths]
     return delimiter.join(str(p) for p in paths)
 
