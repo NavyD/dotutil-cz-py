@@ -1,13 +1,12 @@
 import logging
 import multiprocessing
 import os
-import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from shutil import which
 from subprocess import (DEVNULL, CalledProcessError, Popen, TimeoutExpired,
-                        check_call, check_output)
+                        check_call)
 from typing import Set
 
 # import util
@@ -103,52 +102,6 @@ def winget_installed(pkgs: Set[str], wait_timeout=30) -> Set[str]:
     return res
 
 
-def setup_scoop(pkgs: Set[str], global_pkgs: Set[str]):
-    # [Scoop A command-line installer for Windows](https://scoop.sh/)
-    if not which('scoop'):
-        logging.info('installing scoop')
-        # [Scoop (un)installer](https://github.com/ScoopInstaller/Install)
-        check_call(['powershell.exe', '-c', """
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-irm get.scoop.sh | iex
-
-scoop bucket add extras
-scoop bucket add nerd-fonts
-
-# disable aria2 warn
-scoop config aria2-warning-enabled false
-# retry 3
-scoop config aria2-retry-wait 3
-"""
-                    ])
-
-    apps_txt = check_output('scoop list', shell=True).decode(errors='ignore')
-
-    pkgs_un = [p for p in pkgs if p not in apps_txt]
-    if pkgs_un:
-        logging.info(f'installing scoop {len(pkgs)} pkgs')
-        # -u: disable update scoop when install
-        check_call(['powershell.exe', '-c',
-                    f'scoop install --no-update-scoop {" ".join(pkgs)}'])
-
-    # Only need to run once, this setting is persistent.
-    if not which('gsudo'):
-        raise Exception('not found gsudo for elevate permission')
-    if not re.search(r'^CacheMode\s*=\s*"Auto"\s+\(global\)$', check_output(['gsudo', 'config'], text=True), re.MULTILINE):
-        logging.info('config gsudo CacheMode')
-        # [Credentials Cache](https://gerardog.github.io/gsudo/docs/credentials-cache)
-        check_call('gsudo config CacheMode Auto'.split())
-
-    global_pkgs_un = [p for p in global_pkgs if p not in apps_txt]
-    if global_pkgs_un:
-        s = " ".join(global_pkgs_un)
-        logging.info(
-            f'installing scoop global {len(global_pkgs_un)} pkgs with gsudo: {s}')
-        # install global pkgs with gsudo
-        check_call(
-            ['gsudo', f'scoop install --no-update-scoop --global {s}'])
-
-
 winget_pkgs = {
     # https://gitforwindows.org/
     'Git.Git',
@@ -219,53 +172,6 @@ winget_i_pkgs = {
     # 'Rustlang.Rustup',
 }
 
-scoop_pkgs = {
-    'chezmoi',
-    # [Scoop can utilize aria2 to use multi-connection downloads](https://github.com/ScoopInstaller/Scoop#multi-connection-downloads-with-aria2)
-    'aria2',
-    'gsudo',  # [A Sudo for Windows](https://github.com/gerardog/gsudo)
-    # [A bash inspired readline implementation for PowerShell](https://github.com/PowerShell/PSReadLine)
-    'PSReadLine',
-    # [Efficient and Fast, Small and Portable.](https://geekuninstaller.com/)
-    'geekuninstaller',
-    # [Foreign language reading and translation assistant based on copy and translate.](https://github.com/CopyTranslator/CopyTranslator)
-    'CopyTranslator',  # winget安装后异常，无法卸载，使用scoop安装
-    # [The minimal, blazing-fast, and infinitely customizable prompt for any shell!](https://starship.rs/guide/#%F0%9F%9A%80-installation)
-    'starship',
-    # [Curl is a command-line tool for transferring data specified with URL syntax.](https://github.com/curl/curl)
-    'curl',
-    # 注意：使用scoop安装比winget msstore的更好，环境变量会自动配置。其它源没有scripts目录，winget源没有python3链接
-    # [Python is a programming language that lets you work quickly and integrate systems more effectively](https://www.python.org/)
-    'python',
-    # [A smarter cd command. Supports all major shells.](https://github.com/ajeetdsouza/zoxide)
-    'zoxide',
-    # [The world’s fastest framework for building websites.](https://github.com/gohugoio/hugo)
-    'hugo-extended',
-    # [Fast, secure, efficient backup program](https://github.com/restic/restic)
-    'restic',
-
-    # scoop checkup: install apps
-    # [Innounp is a console application, and it uses command-line options to find out what to do](https://innounp.sourceforge.net/)
-    'innounp',
-    # [The WiX toolset lets developers create installers for Windows Installer, the Windows installation engine.](https://wixtoolset.org/)
-    'wixtoolset',
-}
-
-scoop_global_pkgs = {
-    # global install: -g #################
-    # [This is a fun, new monospaced font that includes programming ligatures and is designed to enhance the modern look and feel of the Windows Terminal.](https://github.com/microsoft/cascadia-code)
-    'Cascadia-Code',
-    # nerd-fonts [Iconic font aggregator, collection, & patcher. 3,600+ icons, 50+ patched fonts: Hack, Source Code Pro, more. Glyph collections: Font Awesome, Material Design Icons, Octicons, & more](https://github.com/ryanoasis/nerd-fonts)
-    'Meslo-NF',
-    # [安装 Nerd Font](https://learn.microsoft.com/zh-cn/windows/terminal/tutorials/custom-prompt-setup#install-a-nerd-font)
-    # [ryanoasis/nerd-fonts Why Caskaydia Cove and not Cascadia Code?](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/CascadiaCode)
-    # [scoop CascadiaCode-NF-Mono.json](https://github.com/matthewjberger/scoop-nerd-fonts/blob/master/bucket/CascadiaCode-NF-Mono.json)
-    'CascadiaCode-NF',
-    # [Sarasa Gothic / 更纱黑体 / 更紗黑體 / 更紗ゴシック / 사라사 고딕](https://github.com/be5invis/Sarasa-Gothic)
-    # [中文等宽字体（Monospace Chinese Font Family）](https://leonvision.online/technology/monospace-chinese-font-family/)
-    'SarasaGothic-ttc',  # or `SarasaGothic-SC`
-}
-
 
 def main():
     args = ChezmoiArgs(os.environ['CHEZMOI_ARGS'])
@@ -273,7 +179,6 @@ def main():
 
     try:
         install_winget(winget_pkgs, winget_i_pkgs)
-        setup_scoop(scoop_pkgs, scoop_global_pkgs)
         winget_install_windows_exporter()
     except KeyboardInterrupt:
         print('Interrupt by user', file=sys.stderr)
