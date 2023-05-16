@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 from shutil import which
-from subprocess import DEVNULL, check_call, run
+from subprocess import DEVNULL, check_call, check_output, run
 
 sys.path.append(str(
     Path(os.environ['CHEZMOI_SOURCE_DIR']).joinpath('vendor/dotutil')))
@@ -141,7 +141,11 @@ def check_passhole(args: ChezmoiArgs):
 
     if has_ph:
         if is_windows():
-            check_call(['wsl.exe', '--', 'ph', 'list'], stdout=DEVNULL)
+            args = ['wsl.exe', '--', 'ph', 'list']
+            # 用户ctrl+c终止后retcode=0但无输出
+            if not check_output(args, encoding='utf8').strip():
+                logging.error(f'failed to check passhole with {args}')
+                raise SetupExcetion('no passhole output found')
         elif which('ph'):
             check_call(['ph', 'list'], stdout=DEVNULL)
 
@@ -193,17 +197,20 @@ def main():
         print(f'parsed chezmoi {args.__dict__} for args `{s}`')
     args.init_log()
 
-    check_passhole(args)
-    check_super_permission(args)
-    check_wsl_systemd(args)
-    check_restic(args)
-
-    sync_from_root(args)
-
-
-if __name__ == '__main__':
     try:
-        main()
+        check_passhole(args)
+        check_super_permission(args)
+        check_wsl_systemd(args)
+        check_restic(args)
+
+        sync_from_root(args)
     except KeyboardInterrupt:
         print('Interrupt by user', file=sys.stderr)
         exit(1)
+    except SetupExcetion as e:
+        print(f'{e}', file=sys.stderr)
+        exit(2)
+
+
+if __name__ == '__main__':
+    main()
