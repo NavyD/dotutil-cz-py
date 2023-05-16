@@ -1,16 +1,17 @@
 import hashlib
-from io import BytesIO
 import json
 import logging
 import os
 import re
 import sys
 import textwrap
+from collections.abc import Iterable
+from io import BytesIO
 from pathlib import Path
-from subprocess import PIPE, CalledProcessError, Popen, check_call, check_output, run
+from subprocess import (PIPE, CalledProcessError, Popen, check_call,
+                        check_output, run)
 from typing import IO, Dict, Set, Union
 from urllib.request import urlopen
-from collections.abc import Iterable
 
 
 class SetupExcetion(Exception):
@@ -65,6 +66,16 @@ def config_log(level=logging.CRITICAL, stream=None):
                         level=level,
                         stream=stream,
                         datefmt='%Y-%m-%d %H:%M:%S')
+
+
+def config_log_cz(level=None):
+    level = logging.ERROR
+    try:
+        ChezmoiArgs().init_log()
+    except Exception:
+        if not level:
+            level = logging.ERROR
+        config_log(level=level)
 
 
 def chezmoi_data(cz_path='chezmoi'):
