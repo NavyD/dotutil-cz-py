@@ -3,15 +3,14 @@ import ctypes
 import getpass
 import logging
 import os
+import subprocess as sp
 import sys
 from shutil import which
-import subprocess as sp
 
 import psutil
 
 sys.path.append(r'{{joinPath .chezmoi.sourceDir "vendor/dotutil"}}')
 from util import config_log_cz  # noqa: E402
-
 
 if psutil.WINDOWS:
     import pywintypes
@@ -101,7 +100,7 @@ def setup_taskscheduler_syncthing(elevated=False):
         tasks_folder = root_folder.CreateFolder(subfolder)
 
     log.debug(
-        f'registering or updating scheduler task {name} with task definition {task_def.__dict__}')
+        f'registering or updating scheduler task {name} to folder {tasks_folder}')
     try:
         # [TaskFolder.RegisterTaskDefinition method](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskfolder-registertaskdefinition)
         tasks_folder.RegisterTaskDefinition(
@@ -120,7 +119,7 @@ def setup_taskscheduler_syncthing(elevated=False):
         # .Run('')  # 运行任务 [RegisteredTask.Run method](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-run)
     except pywintypes.com_error as e:
         # pywintypes.com_error: (-2147352571, '类型不匹配。', None, 1)
-        log.error(f'failed to create task: {e}')
+        log.error(f'failed to create task with def {task_def.__dict__} {e}')
         raise
 
 

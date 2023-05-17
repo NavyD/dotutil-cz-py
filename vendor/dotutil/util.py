@@ -68,7 +68,7 @@ def config_log(level=logging.CRITICAL, stream=None):
                         datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def config_log_cz(level=logging.ERROR):
+def config_log_cz(level=logging.DEBUG):
     '''
     优先从cz读取log配置，如果未找到则为level
     '''
