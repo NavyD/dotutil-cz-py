@@ -68,14 +68,17 @@ def config_log(level=logging.CRITICAL, stream=None):
                         datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def config_log_cz(level=None):
-    level = logging.ERROR
+def config_log_cz(level=logging.ERROR):
+    '''
+    优先从cz读取log配置，如果未找到则为level
+    '''
     try:
         ChezmoiArgs().init_log()
+        return
     except Exception:
-        if not level:
-            level = logging.ERROR
-        config_log(level=level)
+        pass
+
+    config_log(level=level)
 
 
 def chezmoi_data(cz_path='chezmoi'):

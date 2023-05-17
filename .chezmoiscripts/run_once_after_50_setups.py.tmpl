@@ -5,12 +5,18 @@ import logging
 import os
 import sys
 from shutil import which
+import subprocess as sp
 
-import pywintypes
-import win32com.client
+import psutil
 
 sys.path.append(r'{{joinPath .chezmoi.sourceDir "vendor/dotutil"}}')
-from util import config_log_cz, is_windows  # noqa: E402
+from util import config_log_cz  # noqa: E402
+
+
+if psutil.WINDOWS:
+    import pywintypes
+    import win32com.client
+
 
 log = logging.getLogger(__name__)
 
@@ -118,15 +124,32 @@ def setup_taskscheduler_syncthing(elevated=False):
         raise
 
 
-def main():
-    config_log_cz()
+# [Using systemd](https://docs.syncthing.net/users/autostart.html#using-systemd)
+def setup_syncthing_systemd():
+    username = os.environ.get('CHEZMOI_USERNAME', getpass.getuser())
+    srv_name = f'syncthing@{username}.service'
+    args = ['systemctl', 'is-enabled', '--quiet', srv_name]
+    logging.debug(f'checking systemd if {srv_name} is enabled')
+    if sp.run(args).returncode != 0:
+        enable_args = ['sudo', 'systemctl', 'enable', srv_name]
+        logging.info(
+            f'setting up system service {srv_name} for syncthing: {enable_args}')
+        sp.check_call(enable_args)
 
-    if is_windows():
+
+def setup_syncthing_autostart():
+    if psutil.WINDOWS:
         # [Cross-platform way to check admin rights in a Python script under Windows?](https://stackoverflow.com/a/1026626/8566831)
         elevated_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         setup_taskscheduler_syncthing(elevated=elevated_admin)
+    elif psutil.LINUX:
+        setup_syncthing_systemd()
 
-    pass
+
+def main():
+    config_log_cz()
+
+    setup_syncthing_autostart()
 
 
 if __name__ == "__main__":
