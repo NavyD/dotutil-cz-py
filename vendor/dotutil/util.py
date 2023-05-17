@@ -5,11 +5,13 @@ import os
 import re
 import sys
 import textwrap
-from pathlib import Path
-from subprocess import PIPE, CalledProcessError, check_call, check_output, run
-from typing import Dict, Set
-from urllib.request import urlopen
 from collections.abc import Iterable
+from io import BytesIO
+from pathlib import Path
+from subprocess import (PIPE, CalledProcessError, Popen, check_call,
+                        check_output, run)
+from typing import IO, Dict, Set, Union
+from urllib.request import urlopen
 
 
 class SetupExcetion(Exception):
@@ -64,6 +66,19 @@ def config_log(level=logging.CRITICAL, stream=None):
                         level=level,
                         stream=stream,
                         datefmt='%Y-%m-%d %H:%M:%S')
+
+
+def config_log_cz(level=logging.DEBUG):
+    '''
+    优先从cz读取log配置，如果未找到则为level
+    '''
+    try:
+        ChezmoiArgs().init_log()
+        return
+    except Exception:
+        pass
+
+    config_log(level=level)
 
 
 def chezmoi_data(cz_path='chezmoi'):
@@ -139,6 +154,38 @@ def paths2str(paths, delimiter=',') -> str:
     if not isinstance(paths, Iterable):
         paths = [paths]
     return delimiter.join(str(p) for p in paths)
+
+
+def elevate_writefile(path: str, src: Union[IO[bytes], str], chunk_size=4096):
+    """
+    从src读取数据并使用sudo/gsudo启动另一个py进程写入path中。没有其它依赖
+    """
+
+    if type(src) is str:
+        src = BytesIO(src.encode())
+
+    pycp_str = f"""
+import sys
+with open('{path}', 'wb+') as f, sys.stdin.buffer as i:
+    while buf := i.read({chunk_size}):
+        f.write(buf)
+"""
+    args = []
+    if is_windows():
+        args += ['gsudo.exe']
+    else:
+        args += ['sudo']
+    args += [sys.executable, '-c', pycp_str]
+    logging.debug(
+        f'starting new process with {args} for write file {path}')
+    with Popen(args, stdin=PIPE) as p, src as s:
+        with p.stdin as i:
+            while buf := s.read(chunk_size):
+                i.write(buf)
+        if (code := p.wait()) != 0:
+            logging.error(
+                f'Process {p.pid} writing to file {path} failed with exit code {code}')
+            raise Exception(f'failed to write {path} for process {p.pid}')
 
 
 class ChezmoiArgs:
