@@ -21,6 +21,7 @@ def backup_all(bin, dry_run=False):
                 '--tag', tags] +  # noqa W504
                ['/'])
 
+    # default
     group = ','.join(['host', 'paths'])
     check_call([bin, 'forget'] +  # noqa W504
                (['--dry-run'] if dry_run else []) +  # noqa W504
@@ -41,6 +42,9 @@ def main():
         raise Exception('not found restic')
 
     dotenv.load_dotenv(Path.home().joinpath('.autorestic.env'))
+    if backup_db_bin := which('backup-db.sh'):
+        print(f'backup database with {backup_db_bin}')
+        check_call([backup_db_bin])
     backup_all(bin)
 
 
