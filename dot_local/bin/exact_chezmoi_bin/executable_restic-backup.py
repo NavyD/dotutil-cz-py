@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 from pathlib import Path
 from shutil import which
 from subprocess import check_call
@@ -14,26 +15,29 @@ def backup_all(bin, dry_run=False):
     check_call([bin, 'unlock'])
 
     tags = ','.join(['all'])
-    check_call([bin, 'backup'] +  # noqa W504
-               (['--dry-run'] if dry_run else []) +  # noqa W504
-               ['--verbose', '2',
-                '--exclude-file', Path.home().joinpath('.restic.ignore'),
+    args = ([bin, 'backup'] +  # noqa W504
+            (['--dry-run'] if dry_run else []) +  # noqa W504
+            ['--verbose', '2',
+                '--exclude-file', str(Path.home().joinpath('.restic.ignore')),
                 '--tag', tags] +  # noqa W504
-               ['/'])
+            ['/'])
+    print(f'running: {" ".join(args)}')
+    check_call(args)
 
     # default
     group = ','.join(['host', 'paths'])
-    check_call([bin, 'forget'] +  # noqa W504
-               (['--dry-run'] if dry_run else []) +  # noqa W504
-               ['--tag', tags,
-                '--group-by', group,
-                '--prune',
-                '--keep-hourly', '1',
-                '--keep-weekly', '16',
-                '--keep-daily', '14',
-                '--keep-monthly', '18',
-                '--keep-yearly', '3'
-                ])
+    args = ([bin, 'forget'] +  # noqa W504
+            (['--dry-run'] if dry_run else []) +  # noqa W504
+            ['--tag', tags,
+             '--group-by', group,
+             '--prune',
+             '--keep-hourly', '1',
+             '--keep-weekly', '16',
+             '--keep-daily', '14',
+             '--keep-monthly', '18',
+             '--keep-yearly', '3'])
+    print(f'running: {" ".join(args)}')
+    check_call(args)
 
 
 def main():
@@ -42,10 +46,15 @@ def main():
         raise Exception('not found restic')
 
     dotenv.load_dotenv(Path.home().joinpath('.autorestic.env'))
-    if backup_db_bin := which('backup-db.sh'):
-        print(f'backup database with {backup_db_bin}')
-        check_call([backup_db_bin])
-    backup_all(bin)
+
+    try:
+        if backup_db_bin := which('backup-db.sh'):
+            print(f'backup database with {backup_db_bin}')
+            check_call([backup_db_bin])
+        backup_all(bin, dry_run=True)
+    except KeyboardInterrupt:
+        print('Interrupt by user', file=sys.stderr)
+        exit(1)
 
 
 if __name__ == "__main__":
