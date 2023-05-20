@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import logging
-import sys
 from pathlib import Path
 from shutil import which
 from subprocess import check_call
@@ -16,8 +15,9 @@ log = logging.getLogger(Path(__file__).stem)
 
 def backup_all(bin, dry_run=False):
     log.info('pre checking and unlock for backup')
-    check_call([bin, 'check'])
+    # fix lock error before check
     check_call([bin, 'unlock'])
+    check_call([bin, 'check'])
 
     tags = ','.join(['all'])
     args = ([bin, 'backup'] +  # noqa W504
@@ -63,7 +63,7 @@ def main():
             check_call([backup_db_bin])
         backup_all(bin)
     except KeyboardInterrupt:
-        print('Interrupt by user', file=sys.stderr)
+        log.warning('Interrupt by user')
         exit(1)
 
 
