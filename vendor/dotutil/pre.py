@@ -161,13 +161,16 @@ def check_super_permission(args: ChezmoiArgs):
         check_call(cmd, stdout=DEVNULL)
 
 
-def check_wsl_systemd(args: ChezmoiArgs):
+def check_wsl(args: ChezmoiArgs):
     data = args.data()
-    if data['is_wsl2'] is True and data['has_systemd'] is False:
-        p = Path.home().joinpath('.root/etc/wsl.conf')
+    if data['is_wsl2'] is not True:
+        return
+    p = Path.home().joinpath('.root/etc/wsl.conf')
+    if data['has_systemd'] is False or not p.exists():
         # allow this `chezmoi apply ~/.root/etc/wsl.conf` pass
         if p not in args.target_paths() and len(args.target_paths()) != 1:
-            print('not found systemd on wsl2. please run `chezmoi apply ~/.root/etc/wsl.conf` enable systemd and reboot and reinit `chezmoi init`')
+            print(
+                f'found uninit wsl2 configuration {str(p)}. please run `chezmoi apply {str(p)}` to enable and reboot then reinit `chezmoi init`')
             exit(1)
         elif not p.parent.exists():
             # fix: stat .root/etc not exists
@@ -200,7 +203,7 @@ def main():
     try:
         check_passhole(args)
         check_super_permission(args)
-        check_wsl_systemd(args)
+        check_wsl(args)
         check_restic(args)
 
         sync_from_root(args)
