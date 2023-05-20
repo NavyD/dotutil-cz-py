@@ -1,36 +1,44 @@
 #!/usr/bin/env python3
 import ctypes
+import datetime
 import getpass
 import logging
 import os
-import subprocess as sp
-import sys
 from pathlib import Path
 from shutil import which
 
 import psutil
 
-sys.path.append(r'{{joinPath .chezmoi.sourceDir "vendor/dotutil"}}')
-from util import config_log_cz  # noqa: E402
-
 if psutil.WINDOWS:
     import pywintypes
     import win32com.client
 
-
 log = logging.getLogger(Path(__file__).stem)
+log.setLevel(logging.INFO)
 
 
-def setup_taskscheduler_syncthing(elevated=False):
-    """
-    [syncthing Run at user log on or at system startup using Task Scheduler](https://docs.syncthing.net/users/autostart.html#run-at-user-log-on-or-at-system-startup-using-task-scheduler)
-    """
-    if not (bin := which('syncthing.exe')):
-        raise Exception('not found syncthing bin')
+def is_admin():
+    return ctypes.windll.shell32.IsUserAnAdmin() != 0
 
-    args = [bin, '--no-console', '--no-browser']
-    name = 'syncthing-autorun-logon'
-    desc = 'auto run syncthing on login'
+
+def setup_restic_backup(daily_start_time: datetime.datetime, logfile='C:\\Users\\navyd\\restic-backup.log'):
+    if not is_admin():
+        raise Exception('No administrator privileges for configuring restic backup')
+
+    if not (psbin := which('powershell.exe')):
+        raise Exception('not found powershell')
+    if not (bin := which('python.exe')):
+        raise Exception('not found python for restic backup')
+    if not (restic_backup_bin := which('restic-backup.py')):
+        raise Exception('not found restic-backup.py')
+
+    # 防止chezmoi模板和python双重转义: if($LASTEXITCODE -ne 0){ {exit $LASTEXITCODE} }
+    s = '{exit $LASTEXITCODE}'
+    args = [psbin, '-nologo', '-noprofile', '-command',
+            f'{bin} {restic_backup_bin} *>>{logfile}; if($LASTEXITCODE -ne 0){s}']
+
+    name = 'restic-backup-autorun'
+    desc = 'auto run restic-backup'
     userid = ''
     if domain := os.environ.get('USERDOMAIN'):
         userid = f'{domain}\\'
@@ -45,14 +53,14 @@ def setup_taskscheduler_syncthing(elevated=False):
     task_def = task_srv.NewTask(0)
 
     # Create trigger
-    log.debug(f'creating logon trigger for task scheduler {name}')
+    log.debug(f'creating daily trigger for task scheduler {name}')
     # [TriggerCollection.Create method](https://learn.microsoft.com/en-us/windows/win32/taskschd/triggercollection-create)
-    trigger_logon = task_def.Triggers.Create(9)  # TASK_TRIGGER_LOGON
+    trigger_daily = task_def.Triggers.Create(2)  # TASK_TRIGGER_DAILY
     # [LogonTrigger object](https://learn.microsoft.com/en-us/windows/win32/taskschd/logontrigger)
-    trigger_logon.Enabled = True
-    trigger_logon.Delay = 'PT3S'
-    trigger_logon.Id = 'LogonTriggerId'
-    trigger_logon.UserId = userid
+    trigger_daily.Enabled = True
+    trigger_daily.StartBoundary = daily_start_time.isoformat()
+    trigger_daily.DaysInterval = 1
+    trigger_daily.Id = 'DailyTriggerId'
 
     # Create action
     log.debug(
@@ -71,6 +79,9 @@ def setup_taskscheduler_syncthing(elevated=False):
     # [TaskSettings object](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings)
     task_def.Settings.Enabled = True
     task_def.Settings.StopIfGoingOnBatteries = False
+    task_def.Settings.RunOnlyIfNetworkAvailable = True
+    # start the task at any time after its scheduled time has passed
+    task_def.Settings.StartWhenAvailable = True
     task_def.Settings.DisallowStartIfOnBatteries = False  # default true
 
     # The logon method is not specified. Used for non-NT credentials.
@@ -79,22 +90,16 @@ def setup_taskscheduler_syncthing(elevated=False):
     principal_cur = task_def.Principal
     principal_cur.Id = 'Principal1'
     principal_cur.UserId = userid
-    if elevated:
-        log.info('use system to run whether user is logged on or not')
-        principal_cur.UserId = 'system'  # run whether user is logged on or not. require UAC
+    #     principal_cur.UserId = 'NT AUTHORITY\\LOCALSERVICE'  # run whether user is logged on or not. require UAC
     # https://learn.microsoft.com/en-us/windows/win32/taskschd/principal-logontype#property-value
-    # task_logon_interactive_token
     # principal_cur.LogonType = 5  # TASK_LOGON_INTERACTIVE_TOKEN. require UAC 没找到与3的区别
-    principal_cur.LogonType = 3  # TASK_LOGON_INTERACTIVE_TOKEN
+    principal_cur.LogonType = 2  # TASK_LOGON_INTERACTIVE_TOKEN
     # https://learn.microsoft.com/en-us/windows/win32/taskschd/principal-runlevel
-    principal_cur.RunLevel = 0  # TASK_RUNLEVEL_LUA
-    if elevated:
-        log.info('run task with the highest privileges')
-        principal_cur.RunLevel = 1  # TASK_RUNLEVEL_HIGHEST. require UAC
+    principal_cur.RunLevel = 1  # TASK_RUNLEVEL_HIGHEST. require UAC
 
     # get or create folder of task
     root_folder = task_srv.GetFolder('\\')
-    subfolder = '\\Syncthing'
+    subfolder = '\\Restic'
     try:
         tasks_folder = root_folder.GetFolder(subfolder)
     except pywintypes.com_error:
@@ -112,66 +117,14 @@ def setup_taskscheduler_syncthing(elevated=False):
             0x6,  # TASK_CREATE_OR_UPDATE,
             # userId
             '',
+            # userid,
             # password
-            '',  # 不要使用'' No password
+            '',
             # logonType
-            3,  # TASK_LOGON_INTERACTIVE_TOKEN
+            2,  # TASK_LOGON_INTERACTIVE_TOKEN
         )
         # .Run('')  # 运行任务 [RegisteredTask.Run method](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-run)
     except pywintypes.com_error as e:
         # pywintypes.com_error: (-2147352571, '类型不匹配。', None, 1)
         log.error(f'failed to create task with def {task_def.__dict__} {e}')
         raise
-
-
-# [Using systemd](https://docs.syncthing.net/users/autostart.html#using-systemd)
-def setup_syncthing_systemd():
-    username = os.environ.get('CHEZMOI_USERNAME', getpass.getuser())
-    srv_name = f'syncthing@{username}.service'
-    args = ['systemctl', 'is-enabled', '--quiet', srv_name]
-    logging.debug(f'checking systemd if {srv_name} is enabled')
-    if sp.run(args).returncode != 0:
-        enable_args = ['sudo', 'systemctl', 'enable', srv_name]
-        logging.info(
-            f'setting up system service {srv_name} for syncthing: {enable_args}')
-        sp.check_call(enable_args)
-
-
-def setup_syncthing_autostart():
-    if psutil.WINDOWS:
-        # [Cross-platform way to check admin rights in a Python script under Windows?](https://stackoverflow.com/a/1026626/8566831)
-        elevated_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-        setup_taskscheduler_syncthing(elevated=elevated_admin)
-    elif psutil.LINUX:
-        setup_syncthing_systemd()
-
-
-def setup_restic_backup_task():
-    s = r'{{joinPath .chezmoi.sourceDir "vendor/dotutil"}}'.replace("\\", "/")
-    pystr = fr'''
-import logging
-import datetime
-import sys
-sys.path.append('{s}')
-from task_scheduler import setup_restic_backup, log
-from util import config_log_cz  # noqa: E402
-
-log.setLevel(logging.DEBUG)
-config_log_cz()
-# datetime.datetime.now() + datetime.timedelta(seconds=10)
-setup_restic_backup(datetime.datetime.combine(datetime.date.today(), datetime.time(hour=20)))
-'''
-    args = ['gsudo.exe', sys.executable, '-c', pystr]
-    sp.check_call(args)
-
-
-def main():
-    config_log_cz()
-
-    setup_syncthing_autostart()
-    if psutil.WINDOWS:
-        setup_restic_backup_task()
-
-
-if __name__ == "__main__":
-    main()
