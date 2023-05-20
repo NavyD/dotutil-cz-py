@@ -51,7 +51,7 @@ def main():
         if backup_db_bin := which('backup-db.sh'):
             print(f'backup database with {backup_db_bin}')
             check_call([backup_db_bin])
-        backup_all(bin, dry_run=True)
+        backup_all(bin)
     except KeyboardInterrupt:
         print('Interrupt by user', file=sys.stderr)
         exit(1)
