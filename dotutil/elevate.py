@@ -6,14 +6,14 @@ import sys
 
 import psutil
 
-from dotutil import SetupExcetion
+from dotutil import SetupException
 
 log = logging.getLogger(__name__)
 gsudo_path = shutil.which("gsudo.exe")
 sudo_path = shutil.which("sudo")
 
 
-class ElevateExcetion(SetupExcetion):
+class ElevateExcetion(SetupException):
     pass
 
 

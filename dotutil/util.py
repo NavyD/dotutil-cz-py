@@ -3,38 +3,49 @@ import json
 import logging
 import os
 import re
+import subprocess as sp
 import sys
 import textwrap
 from collections.abc import Iterable
 from io import BytesIO
 from pathlib import Path
-from subprocess import PIPE, CalledProcessError, Popen, check_call, check_output, run
+from subprocess import PIPE, Popen, check_call, check_output, run
 from typing import IO, Dict, Generator, List, Set, Union
 from urllib.request import urlopen
 
+import psutil
 
-class SetupExcetion(Exception):
-    pass
+from dotutil import SetupException, elevate, logger
+
+log = logging.getLogger(__name__)
 
 
 def get_digest(path: Path) -> str:
+    chunk_size = 1024 * 4
     h = hashlib.sha256()
-    buf = memoryview(bytearray(128 * 1024))
     try:
-        with open(path, "rb", buffering=0) as f:
-            while n := f.readinto(buf):
-                h.update(buf[:n])
+        with open(path, "rb") as f:
+            while buf := f.read(chunk_size):
+                h.update(buf)
+            return h.hexdigest()
     except PermissionError as e:
-        logging.debug(f"try using sudo to read file {path} without read permission")
+        log.debug(f"try elevate to read file {path} without read permission")
+        pycode = f"""
+import hashlib
+h = hashlib.sha256()
+with open({repr(str(path))}, "rb") as f:
+    while buf := f.read({chunk_size}):
+        h.update(buf)
+    print(h.hexdigest(), end='')
+"""
         try:
-            s = check_output(f"sudo --non-interactive cat {path}".split(), stderr=PIPE)
-        except CalledProcessError as e1:
-            logging.warning(
-                f"failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}. Please enter password with sudo in advance"
+            return elevate.py_check_output(pycode).decode()
+        except sp.CalledProcessError as e1:
+            log.warning(
+                f"failed to read file {path} using {e1.cmd}: "
+                f"{e1.stderr.decode()}. Please enter password with sudo in advance"
             )
             raise e
-        h.update(s)
-    return h.hexdigest()
 
 
 def has_changed_su(src: Path, dst: Path) -> bool:
@@ -48,15 +59,18 @@ def has_changed_su(src: Path, dst: Path) -> bool:
 
 def has_changed(src: Path, dst: Path) -> bool:
     if not src.exists():
-        raise SetupExcetion(f"{src} is not exists")
+        raise SetupException(f"{src} is not exists")
     if not src.is_file():
-        raise SetupExcetion(f"{src} is not a file")
+        raise SetupException(f"{src} is not a file")
     s = src.stat()
     d = dst.stat()
     return s.st_mode != d.st_mode or get_digest(src) != get_digest(dst)
 
 
-def config_log(level=logging.CRITICAL, stream=None):
+def config_global_log(level=logging.CRITICAL, stream=None):
+    """
+    config global log
+    """
     # logging.basicConfig(format='{asctime}.{msecs:<10f} [{levelname:4}] [{pathname}:{name}.{funcName}]: {message}',
     # style='{',
     # [Python logging.Formatter(): is there any way to fix the width of a field and justify it left/right?](https://stackoverflow.com/questions/20618570/python-logging-formatter-is-there-any-way-to-fix-the-width-of-a-field-and-jus)
@@ -69,57 +83,36 @@ def config_log(level=logging.CRITICAL, stream=None):
     )
 
 
-def config_log_cz(level=logging.DEBUG):
+def config_log_cz(log: logging.Logger, level=logging.DEBUG, cz=None):
     """
     优先从cz读取log配置，如果未找到则为level
     """
-    try:
-        ChezmoiArgs().init_log()
-        return
-    except Exception:
-        pass
+    if cz:
+        if cz.has_debug():
+            level = logging.DEBUG
+        elif cz.has_verbose():
+            level = logging.INFO
 
-    config_log(level=level)
+    config_global_log()
+    logger.setLevel(level)
+    log.setLevel(level)
 
 
 def chezmoi_data(cz_path="chezmoi"):
     return json.loads(check_output(f"{cz_path} data --format json".split(), text=True))
 
 
-def is_windows():
-    return os.name == "nt"
-
-
 def elevate_copy_file(src: Path, dst: Path):
-    # [How do I check if I'm running on Windows in Python? [duplicate]](https://stackoverflow.com/a/1325587/8566831)
-    if is_windows():
-        # [Proper indentation for multiline strings?](https://stackoverflow.com/a/2504454/8566831)
-        pycp_str = textwrap.dedent(
-            f"""\
-                                        from pathlib import Path
-                                        import shutil
-                                        dst = Path(r'{str(dst)}')
-                                        dst.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copyfile(r'{str(src)}', dst, follow_symlinks=False)
-                                        """
-        )
-        # [How to preserve file attributes when one copies files in Windows?](https://superuser.com/a/1326224)
-        args = ["gsudo", sys.executable, "-c", pycp_str]
-    else:
-        args = [
-            "sudo",
-            "cp",
-            "--preserve=links,mode,timestamps",
-            "--no-dereference",
-            str(src),
-            str(dst),
-        ]
-        if not dst.parent.exists():
-            check_call(f"sudo mkdir -p {dst.parent}".split())
-
+    pycode = f"""\
+from pathlib import Path
+import shutil
+dst = Path(r'{str(dst)}')
+dst.parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(r'{str(src)}', dst, follow_symlinks=False)
+"""
     logging.info(f"copying file {src} -> {dst}")
-    out = check_output(args)
-    logging.debug(f'`{" ".join(args)}` output: {out.decode(errors="ignore")}')
+    out = elevate.py_check_output(pycode)
+    logging.debug(f'coppied output: {out.decode(errors="ignore")}')
 
 
 def download_file(url, file):
@@ -175,18 +168,11 @@ def elevate_writefile(path: str, src: Union[IO[bytes], str], chunk_size=4096):
 
     pycp_str = f"""
 import sys
-with open('{path}', 'wb+') as f, sys.stdin.buffer as i:
+with open({repr(str(path))}, 'wb+') as f, sys.stdin.buffer as i:
     while buf := i.read({chunk_size}):
         f.write(buf)
 """
-    args = []
-    if is_windows():
-        args += ["gsudo.exe"]
-    else:
-        args += ["sudo"]
-    args += [sys.executable, "-c", pycp_str]
-    logging.debug(f"starting new process with {args} for write file {path}")
-    with Popen(args, stdin=PIPE) as p, src as s:
+    with elevate.py_popen(pycp_str, stdin=sp.PIPE) as p, src as s:
         with p.stdin as i:
             while buf := s.read(chunk_size):
                 i.write(buf)
@@ -194,7 +180,7 @@ with open('{path}', 'wb+') as f, sys.stdin.buffer as i:
             logging.error(
                 f"Process {p.pid} writing to file {path} failed with exit code {code}"
             )
-            raise Exception(f"failed to write {path} for process {p.pid}")
+            raise SetupException(f"failed to write {path} for process {p.pid}")
 
 
 class ChezmoiArgs:
@@ -206,7 +192,7 @@ class ChezmoiArgs:
             r"^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$"
         ).match(args)
         if not m:
-            raise SetupExcetion(f"failed to parse chezmoi args: {args}")
+            raise SetupException(f"failed to parse chezmoi args: {args}")
 
         global_opts = (m.group(3) or "").strip()
         self._subcommand = (m.group(6) or "").strip()
@@ -240,19 +226,19 @@ class ChezmoiArgs:
         if v := os.environ["CHEZMOI_HOME_DIR"]:
             return Path(v).joinpath(".root")
         else:
-            raise SetupExcetion("not found env CHEZMOI_HOME_DIR")
+            raise SetupException("not found env CHEZMOI_HOME_DIR")
 
     def root_list(self) -> Path:
         if v := os.environ["CHEZMOI_CACHE_DIR"]:
             return Path(v).joinpath(".root")
         else:
-            raise SetupExcetion("not found env CHEZMOI_CACHE_DIR")
+            raise SetupException("not found env CHEZMOI_CACHE_DIR")
 
     def bin_path(self) -> Path:
         if v := os.environ["CHEZMOI_EXECUTABLE"]:
             return Path(v)
         else:
-            raise SetupExcetion("not found env CHEZMOI_EXECUTABLE")
+            raise SetupException("not found env CHEZMOI_EXECUTABLE")
 
     def data(self) -> Dict[str, str]:
         if self._data is None:
@@ -261,17 +247,9 @@ class ChezmoiArgs:
             )
         return self._data
 
-    def init_log(self):
-        level = logging.ERROR
-        if self.has_debug():
-            level = logging.DEBUG
-        elif self.has_verbose():
-            level = logging.INFO
-        config_log(level=level)
-
     def get_source_path(self, target: Path) -> Path:
         if target is None:
-            raise SetupExcetion("target is none")
+            raise SetupException("target is none")
         p = run(
             [self.bin_path(), "source-path", target],
             stdout=PIPE,

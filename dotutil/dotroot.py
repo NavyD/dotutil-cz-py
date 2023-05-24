@@ -12,7 +12,7 @@ import psutil
 
 from dotutil.util import (
     ChezmoiArgs,
-    SetupExcetion,
+    SetupException,
     elevate_copy_file,
     has_changed,
     has_changed_su,
@@ -57,7 +57,7 @@ def sync_from_root(args: ChezmoiArgs):
         )
         return
     elif mapped_root_dir.is_file():
-        raise SetupExcetion(f"mapped root is not dir: {paths2str(mapped_root_dir)}")
+        raise SetupException(f"mapped root is not dir: {paths2str(mapped_root_dir)}")
 
     logging.info(f"syncing root to {paths2str(mapped_root_dir)} if changed")
     count = 0
@@ -172,7 +172,7 @@ def check_passhole(args: ChezmoiArgs):
             # 用户ctrl+c终止后retcode=0但无输出
             if not check_output(args, encoding="utf8").strip():
                 logging.error(f"failed to check passhole with {args}")
-                raise SetupExcetion("no passhole output found")
+                raise SetupException("no passhole output found")
         elif which("ph"):
             check_call(["ph", "list"], stdout=DEVNULL)
 
@@ -249,7 +249,7 @@ def pre_run():
     except KeyboardInterrupt:
         print("Interrupt by user", file=sys.stderr)
         exit(1)
-    except SetupExcetion as e:
+    except SetupException as e:
         print(f"{e}", file=sys.stderr)
         exit(2)
 
@@ -291,7 +291,7 @@ def copy_to_root(mapped_root: Path):
                     if has_changed_su(path, root_path):
                         elevate_copy(path, root_path)
                 else:
-                    raise SetupExcetion(f"invalid file {paths2str(root_path)}")
+                    raise SetupException(f"invalid file {paths2str(root_path)}")
                 continue
 
             if not root_path.exists():
@@ -304,11 +304,11 @@ def copy_to_root(mapped_root: Path):
                     logging.error(
                         f"Checking for changes fails with permission issues on files {paths2str(path)} -> {paths2str(root_path)}: {e}"
                     )
-                    raise SetupExcetion(e)
+                    raise SetupException(e)
                 if changed:
                     elevate_copy(path, root_path)
             else:
-                raise SetupExcetion(f"invalid file {paths2str(root_path)}")
+                raise SetupException(f"invalid file {paths2str(root_path)}")
     logging.info(f"copied {diff_count} files from {paths2str(mapped_root)}")
 
 
@@ -472,7 +472,7 @@ class RootCleaner:
                             self.log.error(
                                 f"failed to remove {paths2str(path)}: returncode={e.returncode}"
                             )
-                        except SetupExcetion:
+                        except SetupException:
                             pass
                     else:
                         self.log.info(f"skipped remove {paths2str(path)}")
@@ -488,7 +488,7 @@ class RootCleaner:
             self.log.warning(f"ignore not found root file {paths2str(path)}")
             return
         elif path == Path(os.sep):
-            raise SetupExcetion(f"invalid path {paths2str(path)}")
+            raise SetupException(f"invalid path {paths2str(path)}")
 
         if psutil.WINDOWS:
             cmd = ["gsudo", "del", str(path)]
@@ -531,6 +531,6 @@ def post_run():
 
     try:
         sync(args)
-    except SetupExcetion as e:
+    except SetupException as e:
         logging.error(f"{e}")
         exit(1)
