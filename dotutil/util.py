@@ -225,6 +225,11 @@ class ChezmoiArgs:
         else:
             raise SetupException("not found env CHEZMOI_HOME_DIR")
 
+    def home_dir(self) -> Path:
+        if s := os.environ.get("CHEZMOI_HOME_DIR", self.data().get("homeDir")):
+            return Path(s)
+        raise SetupException("not found chezmoi home dir")
+
     def root_list(self) -> Path:
         if v := os.environ["CHEZMOI_CACHE_DIR"]:
             return Path(v).joinpath(".root")

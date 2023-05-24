@@ -2,10 +2,11 @@
 import logging
 import os
 import re
+import subprocess as sp
 import sys
 from pathlib import Path
 from shutil import which
-from subprocess import DEVNULL, PIPE, CalledProcessError, check_call, check_output, run
+from subprocess import DEVNULL, PIPE, CalledProcessError, check_call, run
 from typing import Iterable, Set
 
 import psutil
@@ -106,29 +107,28 @@ def pre_sync_from_root(args: ChezmoiArgs):
     log.info(f"found changed {count} files")
 
 
-def check_passhole(args: ChezmoiArgs):
-    if args.data()["has_keepass"] is not True:
+def check_passhole(cz: ChezmoiArgs):
+    if cz.data()["has_keepass"] is not True:
         return
     elif not psutil.WINDOWS:
-        p = Path(os.environ.get("CHEZMOI_HOME_DIR", str(Path.home()))).joinpath(
-            ".config/passhole.ini"
-        )
+        p = cz.home_dir().joinpath(".config/passhole.ini")
         # # allow this `chezmoi apply ~/.config/passhole.ini` pass
         if (
             not p.is_file()
-            and len(args.target_paths()) != 1
-            and p not in args.target_paths()
+            and len(cz.target_paths()) != 1
+            and p not in cz.target_paths()
         ):
-            print(
-                "not found passhole.ini. please run `chezmoi apply ~/.config/passhole.ini` at first"
+            log.error(
+                f"not found config passhole in {p}. "
+                f"please run `chezmoi apply ~/.config/passhole.ini` at first"
             )
-            exit(1)
+            raise SetupException("not found passhole config")
 
     has_ph = False
-    if args.target_paths():
+    if cz.target_paths():
         # filtered if src path is none
         src_paths = [
-            p for p in map(lambda p: args.get_source_path(p), args.target_paths()) if p
+            p for p in map(lambda p: cz.get_source_path(p), cz.target_paths()) if p
         ]
         log.debug(f"finding passhole template in {paths2str(src_paths)}")
 
@@ -168,14 +168,25 @@ def check_passhole(args: ChezmoiArgs):
         has_ph = True
 
     if has_ph:
+        args = []
         if psutil.WINDOWS:
-            args = ["wsl.exe", "--", "ph", "list"]
-            # 用户ctrl+c终止后retcode=0但无输出
-            if not check_output(args, encoding="utf8").strip():
-                log.error(f"failed to check passhole with {args}")
-                raise SetupException("no passhole output found")
-        elif which("ph"):
-            check_call(["ph", "list"], stdout=DEVNULL)
+            if bin := which("wsl.exe"):
+                args = [bin, "--", "ph", "list"]
+            else:
+                raise SetupException("not found wsl.exe")
+        else:
+            if bin := which("ph"):
+                args = ["ph", "list"]
+            else:
+                raise SetupException("not found ph")
+        log.debug(
+            f"checking if passhole is active with {args} for "
+            f"{paths2str(cz.target_paths() or ['~'])}"
+        )
+        # 用户ctrl+c终止后retcode=0但无输出
+        if not sp.check_output(args, encoding="utf8").strip():
+            log.error(f"failed to check passhole with {args}")
+            raise SetupException("no passhole output found")
 
 
 def check_super_permission(args: ChezmoiArgs):
