@@ -183,7 +183,7 @@ with open({repr(str(path))}, 'wb+') as f, sys.stdin.buffer as i:
 class ChezmoiArgs:
     def __init__(self, args=None) -> None:
         if not args:
-            args = os.environ["CHEZMOI_ARGS"]
+            args = os.environ.get("CHEZMOI_ARGS", "")
 
         m = re.compile(
             r"^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$"
