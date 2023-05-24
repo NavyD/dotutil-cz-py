@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "dotutil"
+version = "0.1.0"
+description = ""
+authors = ["navyd <dhjnavyd@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+psutil = "^5.9.5"
+
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.3.1"
+
+[tool.pytest.ini_options]
+# [Logging within pytest tests](https://stackoverflow.com/a/51633600/8566831)
+# https://docs.pytest.org/en/7.1.x/how-to/logging.html#live-logs
+log_cli = true
+log_cli_level = "DEBUG"
+log_cli_format = "%(asctime)s.%(msecs)03d [%(levelname)-5s] [%(name)s.%(funcName)s]: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+# https://docs.pytest.org/en/7.3.x/explanation/goodpractices.html#tests-outside-application-code
+addopts = ["--import-mode=importlib"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
