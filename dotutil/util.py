@@ -244,7 +244,9 @@ class ChezmoiArgs:
 
     def data(self) -> Dict[str, str]:
         if self._data is None:
-            out = sp.check_output(["{cz_path}", "data", "--format", "json"], text=True)
+            out = sp.check_output(
+                [self.bin_path(), "data", "--format", "json"], text=True
+            )
             self._data = json.loads(out)
         return self._data
 
