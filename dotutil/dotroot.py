@@ -246,18 +246,16 @@ def print_env():
 
 def pre_run():
     s = os.environ["CHEZMOI_ARGS"]
-    args = ChezmoiArgs(s)
-    config_log_cz()
-    if args.has_debug():
-        print(f"parsed chezmoi {args.__dict__} for args `{s}`")
+    cz = ChezmoiArgs(s)
+    config_log_cz(cz=cz)
 
     try:
-        check_passhole(args)
-        check_super_permission(args)
-        check_wsl(args)
-        check_restic(args)
+        check_passhole(cz)
+        check_super_permission(cz)
+        check_wsl(cz)
+        check_restic(cz)
 
-        pre_sync_from_root(args)
+        pre_sync_from_root(cz)
     except KeyboardInterrupt:
         print("Interrupt by user", file=sys.stderr)
         exit(1)
@@ -326,7 +324,7 @@ def copy_to_root(mapped_root: Path):
 
 class RootCleaner:
     def __init__(self, mapped_root: Path, rootlist_path: Path, cz_bin) -> None:
-        self.log = log.getLogger(__name__)
+        self.log = logging.getLogger(__name__)
         self._rootlist_path = rootlist_path
         self._mapped_root = mapped_root
         self._cz_bin = cz_bin
@@ -536,11 +534,11 @@ def post_sync(args: ChezmoiArgs):
 
 
 def post_run():
-    args = ChezmoiArgs()
-    args.init_log()
+    cz = ChezmoiArgs()
+    config_log_cz(cz=cz)
 
     try:
-        post_sync(args)
+        post_sync(cz)
     except SetupException as e:
         log.error(f"{e}")
         exit(1)
