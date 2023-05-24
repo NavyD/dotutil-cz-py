@@ -10,7 +10,6 @@ from subprocess import DEVNULL, PIPE, CalledProcessError, check_call, run
 from typing import Iterable, Set
 
 import psutil
-
 from dotutil.util import (
     ChezmoiArgs,
     SetupException,
@@ -505,39 +504,3 @@ class RootCleaner:
             cmd = ["sudo", "rm", "-rf", str(path)]
         self.log.info(f"removing {paths2str(path)} with command: {cmd}")
         check_call(cmd)
-
-
-def post_sync(args: ChezmoiArgs):
-    mapped_root = args.mapped_root()
-    rootlist_path = args.root_list()
-    target_paths = args.target_paths()
-
-    if not mapped_root.is_dir():
-        log.warning(f"skipped apply mapped root {paths2str(mapped_root)} is not dir")
-    elif args.subcommand() != "apply":
-        log.debug(f"skipped apply for subcommand: {args.subcommand()}")
-    # only run once when apply post and run script
-    elif not target_paths and Path(__file__).name.startswith("run_after_"):
-        log.debug("skipped apply for chezmoi scripts")
-    # target is not a sub path or self of mapped root
-    elif target_paths and all(
-        mapped_root not in p.parents and mapped_root != p for p in target_paths
-    ):
-        log.info(
-            f"skipped apply non mapped root {paths2str(mapped_root)} in target paths: {paths2str(target_paths)}"
-        )
-    else:
-        log.info(f"syncing {paths2str(mapped_root)} to /")
-        copy_to_root(mapped_root)
-        RootCleaner(mapped_root, rootlist_path, args.bin_path()).clean(target_paths)
-
-
-def post_run():
-    cz = ChezmoiArgs()
-    config_log_cz(cz=cz)
-
-    try:
-        post_sync(cz)
-    except SetupException as e:
-        log.error(f"{e}")
-        exit(1)
