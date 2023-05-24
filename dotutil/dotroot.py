@@ -6,10 +6,11 @@ import subprocess as sp
 import sys
 from pathlib import Path
 from shutil import which
-from subprocess import DEVNULL, PIPE, CalledProcessError, check_call, run
+from subprocess import PIPE, CalledProcessError, check_call, run
 from typing import Iterable, Set
 
 import psutil
+from dotutil import elevate
 from dotutil.util import (
     ChezmoiArgs,
     SetupException,
@@ -188,21 +189,31 @@ def check_passhole(cz: ChezmoiArgs):
             raise SetupException("no passhole output found")
 
 
-def check_super_permission(args: ChezmoiArgs):
-    target_paths = args.target_paths()
-    if psutil.WINDOWS:
-        pass
-    elif (
-        which("sudo")
-        and args.mapped_root().is_dir()
-        and (
-            not target_paths
-            or any(args.mapped_root() in p.parents for p in target_paths)
-        )
+def check_super_permission(cz: ChezmoiArgs):
+    target_paths = cz.target_paths()
+    if not cz.mapped_root().is_dir() or (
+        target_paths and all(cz.mapped_root() not in p.parents for p in target_paths)
     ):
-        cmd = ["sudo", "echo"]
-        log.info(f"checking super permission for {paths2str(target_paths)}")
-        check_call(cmd, stdout=DEVNULL)
+        return
+
+    args = []
+    if psutil.WINDOWS:
+        # -p | --pid {pid} Specify which process can use the cache. (Use 0 for any, Default=caller pid)
+        # https://gerardog.github.io/gsudo/docs/credentials-cache#usage
+        args = [elevate.gsudo_path, "cache", "on", "-p", "0"]
+    elif psutil.POSIX:
+        args = [elevate.sudo_path, "echo"]
+    else:
+        raise SetupException("unsupported os")
+
+    log.info(
+        f"checking super permission with {args} "
+        f"for {paths2str(target_paths) or '~'}"
+    )
+    p = sp.run(args, stdout=sp.DEVNULL, stderr=sp.PIPE)
+    if p.returncode != 0:
+        log.error(f"failed to check permission exited {p} with {args}")
+        p.check_returncode()
 
 
 def check_wsl(args: ChezmoiArgs):
