@@ -245,8 +245,7 @@ def print_env():
 
 
 def pre_run():
-    s = os.environ["CHEZMOI_ARGS"]
-    cz = ChezmoiArgs(s)
+    cz = ChezmoiArgs()
     config_log_cz(cz=cz)
 
     try:

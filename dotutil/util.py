@@ -82,6 +82,11 @@ def config_log_cz(log: logging.Logger = None, cz=None, level=logging.DEBUG):
     """
     优先从cz读取log配置，如果未找到则为level
     """
+    if cz is None:
+        try:
+            cz = ChezmoiArgs()
+        except SetupException():
+            pass
     if cz:
         if cz.has_debug():
             level = logging.DEBUG
