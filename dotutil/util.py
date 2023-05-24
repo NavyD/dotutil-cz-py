@@ -8,9 +8,8 @@ import textwrap
 from collections.abc import Iterable
 from io import BytesIO
 from pathlib import Path
-from subprocess import (PIPE, CalledProcessError, Popen, check_call,
-                        check_output, run)
-from typing import IO, Dict, Set, Union
+from subprocess import PIPE, CalledProcessError, Popen, check_call, check_output, run
+from typing import IO, Dict, Generator, List, Set, Union
 from urllib.request import urlopen
 
 
@@ -26,14 +25,13 @@ def get_digest(path: Path) -> str:
             while n := f.readinto(buf):
                 h.update(buf[:n])
     except PermissionError as e:
-        logging.debug(
-            f"try using sudo to read file {path} without read permission")
+        logging.debug(f"try using sudo to read file {path} without read permission")
         try:
-            s = check_output(
-                f'sudo --non-interactive cat {path}'.split(), stderr=PIPE)
+            s = check_output(f"sudo --non-interactive cat {path}".split(), stderr=PIPE)
         except CalledProcessError as e1:
             logging.warning(
-                f'failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}. Please enter password with sudo in advance')
+                f"failed to read file {path} using {e1.cmd}: {e1.stderr.decode().strip()}. Please enter password with sudo in advance"
+            )
             raise e
         h.update(s)
     return h.hexdigest()
@@ -41,7 +39,8 @@ def get_digest(path: Path) -> str:
 
 def has_changed_su(src: Path, dst: Path) -> bool:
     def get_mode(path):
-        return check_output(['sudo', 'stat', '--format', '%a', path], text=True)
+        return check_output(["sudo", "stat", "--format", "%a", path], text=True)
+
     smode = get_mode(src)
     dmode = get_mode(dst)
     return smode != dmode or get_digest(src) != get_digest(dst)
@@ -62,16 +61,18 @@ def config_log(level=logging.CRITICAL, stream=None):
     # style='{',
     # [Python logging.Formatter(): is there any way to fix the width of a field and justify it left/right?](https://stackoverflow.com/questions/20618570/python-logging-formatter-is-there-any-way-to-fix-the-width-of-a-field-and-jus)
     # TODO: fixed width for long pathname
-    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-5s] [%(name)s.%(funcName)s]: %(message)s',
-                        level=level,
-                        stream=stream,
-                        datefmt='%Y-%m-%d %H:%M:%S')
+    logging.basicConfig(
+        format="%(asctime)s.%(msecs)03d [%(levelname)-5s] [%(name)s.%(funcName)s]: %(message)s",
+        level=level,
+        stream=stream,
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
 
 def config_log_cz(level=logging.DEBUG):
-    '''
+    """
     优先从cz读取log配置，如果未找到则为level
-    '''
+    """
     try:
         ChezmoiArgs().init_log()
         return
@@ -81,42 +82,49 @@ def config_log_cz(level=logging.DEBUG):
     config_log(level=level)
 
 
-def chezmoi_data(cz_path='chezmoi'):
-    return json.loads(check_output(f'{cz_path} data --format json'.split(), text=True))
+def chezmoi_data(cz_path="chezmoi"):
+    return json.loads(check_output(f"{cz_path} data --format json".split(), text=True))
 
 
 def is_windows():
-    return os.name == 'nt'
+    return os.name == "nt"
 
 
 def elevate_copy_file(src: Path, dst: Path):
     # [How do I check if I'm running on Windows in Python? [duplicate]](https://stackoverflow.com/a/1325587/8566831)
     if is_windows():
         # [Proper indentation for multiline strings?](https://stackoverflow.com/a/2504454/8566831)
-        pycp_str = textwrap.dedent(f"""\
+        pycp_str = textwrap.dedent(
+            f"""\
                                         from pathlib import Path
                                         import shutil
                                         dst = Path(r'{str(dst)}')
                                         dst.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copyfile(r'{str(src)}', dst, follow_symlinks=False)
-                                        """)
+                                        """
+        )
         # [How to preserve file attributes when one copies files in Windows?](https://superuser.com/a/1326224)
-        args = ['gsudo', sys.executable, '-c', pycp_str]
+        args = ["gsudo", sys.executable, "-c", pycp_str]
     else:
-        args = ['sudo', 'cp', '--preserve=links,mode,timestamps',
-                '--no-dereference', str(src), str(dst)]
+        args = [
+            "sudo",
+            "cp",
+            "--preserve=links,mode,timestamps",
+            "--no-dereference",
+            str(src),
+            str(dst),
+        ]
         if not dst.parent.exists():
             check_call(f"sudo mkdir -p {dst.parent}".split())
 
-    logging.info(
-        f'copying file {src} -> {dst}')
+    logging.info(f"copying file {src} -> {dst}")
     out = check_output(args)
     logging.debug(f'`{" ".join(args)}` output: {out.decode(errors="ignore")}')
 
 
 def download_file(url, file):
     CHUNK = 10 * 1024
-    logging.info(f'downloading to {file.name} from {url}')
+    logging.info(f"downloading to {file.name} from {url}")
     response = urlopen(url)
     while chunk := response.read(CHUNK):
         file.write(chunk)
@@ -132,23 +140,24 @@ def dyn_import(st: str):
     """
     import re
     import sys
-    pat = re.compile(r'^\s*(from|import)\s+(\w+)')
+
+    pat = re.compile(r"^\s*(from|import)\s+(\w+)")
     if not pat.match(st):
-        st = f'import {st}'
+        st = f"import {st}"
     try:
         exec(st, sys._getframe(1).f_globals)
     except ModuleNotFoundError:
         import subprocess
+
         m = pat.search(st)
         package = m.group(2)
         if not package:
-            raise Exception(f'not found package for statement: {st}')
-        subprocess.check_call(
-            f'{sys.executable} -m pip install {package}', shell=True)
+            raise Exception(f"not found package for statement: {st}")
+        subprocess.check_call(f"{sys.executable} -m pip install {package}", shell=True)
         exec(st, sys._getframe(1).f_globals)
 
 
-def paths2str(paths, delimiter=',') -> str:
+def paths2str(paths, delimiter=",") -> str:
     # only for iterable type, except str like __getitem__
     # [In Python, how do I determine if an object is iterable?](https://stackoverflow.com/a/1952481/8566831)
     if not isinstance(paths, Iterable):
@@ -172,44 +181,46 @@ with open('{path}', 'wb+') as f, sys.stdin.buffer as i:
 """
     args = []
     if is_windows():
-        args += ['gsudo.exe']
+        args += ["gsudo.exe"]
     else:
-        args += ['sudo']
-    args += [sys.executable, '-c', pycp_str]
-    logging.debug(
-        f'starting new process with {args} for write file {path}')
+        args += ["sudo"]
+    args += [sys.executable, "-c", pycp_str]
+    logging.debug(f"starting new process with {args} for write file {path}")
     with Popen(args, stdin=PIPE) as p, src as s:
         with p.stdin as i:
             while buf := s.read(chunk_size):
                 i.write(buf)
         if (code := p.wait()) != 0:
             logging.error(
-                f'Process {p.pid} writing to file {path} failed with exit code {code}')
-            raise Exception(f'failed to write {path} for process {p.pid}')
+                f"Process {p.pid} writing to file {path} failed with exit code {code}"
+            )
+            raise Exception(f"failed to write {path} for process {p.pid}")
 
 
 class ChezmoiArgs:
     def __init__(self, args=None) -> None:
         if not args:
-            args = os.environ['CHEZMOI_ARGS']
+            args = os.environ["CHEZMOI_ARGS"]
 
         m = re.compile(
-            r'^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$').match(args)
+            r"^(.*?chezmoi(\.exe)?)((\s+--?\w+(-\w+)*)*)\s+(\w+(-\w+)*)((\s+--?\w+(-\w+)*)*)((\s+.+?)*)$"
+        ).match(args)
         if not m:
-            raise SetupExcetion(f'failed to parse chezmoi args: {args}')
+            raise SetupExcetion(f"failed to parse chezmoi args: {args}")
 
-        global_opts = (m.group(3) or '').strip()
-        self._subcommand = (m.group(6) or '').strip()
-        sub_opts = (m.group(8) or '').strip()
-        paths = (m.group(11) or '').strip()
-        opts = set((global_opts + ' ' + sub_opts).strip().split())
+        global_opts = (m.group(3) or "").strip()
+        self._subcommand = (m.group(6) or "").strip()
+        sub_opts = (m.group(8) or "").strip()
+        paths = (m.group(11) or "").strip()
+        opts = set((global_opts + " " + sub_opts).strip().split())
 
         self._target_paths = set(Path(s).expanduser() for s in paths.split())
-        self._is_debug = bool(opts) and '--debug' in opts
+        self._is_debug = bool(opts) and "--debug" in opts
 
-        pat_multi_opts = re.compile(r'^-\w*v')
-        self._is_verbose = any(v in opts for v in [
-                               '-v', '--verbose']) or any(pat_multi_opts.match(v) for v in opts)
+        pat_multi_opts = re.compile(r"^-\w*v")
+        self._is_verbose = any(v in opts for v in ["-v", "--verbose"]) or any(
+            pat_multi_opts.match(v) for v in opts
+        )
 
         self._data = None
 
@@ -226,27 +237,28 @@ class ChezmoiArgs:
         return self._target_paths
 
     def mapped_root(self) -> Path:
-        if v := os.environ['CHEZMOI_HOME_DIR']:
-            return Path(v).joinpath('.root')
+        if v := os.environ["CHEZMOI_HOME_DIR"]:
+            return Path(v).joinpath(".root")
         else:
-            raise SetupExcetion('not found env CHEZMOI_HOME_DIR')
+            raise SetupExcetion("not found env CHEZMOI_HOME_DIR")
 
     def root_list(self) -> Path:
-        if v := os.environ['CHEZMOI_CACHE_DIR']:
-            return Path(v).joinpath('.root')
+        if v := os.environ["CHEZMOI_CACHE_DIR"]:
+            return Path(v).joinpath(".root")
         else:
-            raise SetupExcetion('not found env CHEZMOI_CACHE_DIR')
+            raise SetupExcetion("not found env CHEZMOI_CACHE_DIR")
 
     def bin_path(self) -> Path:
-        if v := os.environ['CHEZMOI_EXECUTABLE']:
+        if v := os.environ["CHEZMOI_EXECUTABLE"]:
             return Path(v)
         else:
-            raise SetupExcetion('not found env CHEZMOI_EXECUTABLE')
+            raise SetupExcetion("not found env CHEZMOI_EXECUTABLE")
 
     def data(self) -> Dict[str, str]:
         if self._data is None:
-            self._data = json.loads(check_output(
-                [self.bin_path(), 'data', '--format', 'json'], text=True))
+            self._data = json.loads(
+                check_output([self.bin_path(), "data", "--format", "json"], text=True)
+            )
         return self._data
 
     def init_log(self):
@@ -259,7 +271,61 @@ class ChezmoiArgs:
 
     def get_source_path(self, target: Path) -> Path:
         if target is None:
-            raise SetupExcetion('target is none')
-        p = run([self.bin_path(), 'source-path', target],
-                stdout=PIPE, stderr=PIPE, text=True)
+            raise SetupExcetion("target is none")
+        p = run(
+            [self.bin_path(), "source-path", target],
+            stdout=PIPE,
+            stderr=PIPE,
+            text=True,
+        )
         return Path(p.stdout.strip()) if p.returncode == 0 else None
+
+
+class Restic:
+    def __init__(self, bin: str, env=None) -> None:
+        self.log = logging.getLogger(__name__)
+        self._bin = Path(bin)
+        if not self._bin.exists():
+            raise Exception("not found restic bin")
+        self._env = os.environ.copy()
+        if env:
+            self.log.debug(f"using restic env: {env}")
+            # restic error: unable to open cache: unable to locate cache directory: neither $XDG_CACHE_HOME nor $HOME are defined
+            self._env.update(env)
+
+    def dump(
+        self, file: Path, snapshot_id="latest", **kwargs
+    ) -> Generator[bytes, None, None]:
+        chunk_size = 1024
+        args = [str(self._bin), "dump"]
+        for k, v in kwargs.items():
+            args += [f"--{k}", v]
+        args += [snapshot_id, str(file)]
+        self.log.debug(f"start running command {args}")
+
+        with Popen(args, stdout=PIPE, text=False, env=self._env) as p:
+            with p.stdout as f:
+                self.log.debug(
+                    f"reading the stdout output data of restic process {p.pid} with chunk size={chunk_size}"
+                )
+                count = 0
+                while chunk := f.read(chunk_size):
+                    count += len(chunk)
+                    yield chunk
+
+                self.log.debug(
+                    f"read the stdout of restic process {p.pid} for a total of {count} bytes"
+                )
+
+    def restore(
+        self, target: Path, include_pats: List[str], snapshot_id="latest", **kwargs
+    ):
+        args = ["sudo", "-E", str(self._bin), "restore", "--target", str(target)]
+        if include_pats:
+            for p in include_pats:
+                args += ["--include", p]
+        for k, v in kwargs.items():
+            args += [f"--{k}", v]
+        args += [snapshot_id]
+        self.log.debug(f"start running command {args}")
+        check_call(args, env=self._env)
