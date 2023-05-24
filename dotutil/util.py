@@ -79,7 +79,7 @@ def config_global_log(level=logging.CRITICAL, stream=None):
     )
 
 
-def config_log_cz(log: logging.Logger, level=logging.DEBUG, cz=None):
+def config_log_cz(log: logging.Logger = None, cz=None, level=logging.DEBUG):
     """
     优先从cz读取log配置，如果未找到则为level
     """
@@ -91,7 +91,8 @@ def config_log_cz(log: logging.Logger, level=logging.DEBUG, cz=None):
 
     config_global_log()
     logger.setLevel(level)
-    log.setLevel(level)
+    if log:
+        log.setLevel(level)
 
 
 def chezmoi_data(cz_path="chezmoi"):

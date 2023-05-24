@@ -13,6 +13,7 @@ import psutil
 from dotutil.util import (
     ChezmoiArgs,
     SetupException,
+    config_log_cz,
     elevate_copy_file,
     has_changed,
     has_changed_su,
@@ -40,6 +41,8 @@ from dotutil.util import (
 * 否则复制新文件到root，注意更新文件owner
 """
 
+log = logging.getLogger(__name__)
+
 
 def pre_sync_from_root(args: ChezmoiArgs):
     mapped_root_dir = args.mapped_root()
@@ -47,19 +50,17 @@ def pre_sync_from_root(args: ChezmoiArgs):
     if target_paths and all(
         mapped_root_dir not in p.parents and mapped_root_dir != p for p in target_paths
     ):
-        logging.debug(
+        log.debug(
             f"skipped copy root to {paths2str(mapped_root_dir)} for target paths: {paths2str(target_paths)}"
         )
         return
     if not mapped_root_dir.exists():
-        logging.info(
-            f"skipped copy mapped root is not dir: {paths2str(mapped_root_dir)}"
-        )
+        log.info(f"skipped copy mapped root is not dir: {paths2str(mapped_root_dir)}")
         return
     elif mapped_root_dir.is_file():
         raise SetupException(f"mapped root is not dir: {paths2str(mapped_root_dir)}")
 
-    logging.info(f"syncing root to {paths2str(mapped_root_dir)} if changed")
+    log.info(f"syncing root to {paths2str(mapped_root_dir)} if changed")
     count = 0
     for path in mapped_root_dir.rglob("*"):
         if path.is_file():
@@ -69,7 +70,7 @@ def pre_sync_from_root(args: ChezmoiArgs):
             try:
                 root_path.exists()
             except PermissionError:
-                logging.debug(f"checking exists for private {str(root_path)}")
+                log.debug(f"checking exists for private {str(root_path)}")
                 privated_path = True
                 privated_path_exists = (
                     run(["sudo", "test", "-e", root_path]).returncode == 0
@@ -79,7 +80,7 @@ def pre_sync_from_root(args: ChezmoiArgs):
             if (privated_path and not privated_path_exists) or (
                 not privated_path and not root_path.exists()
             ):
-                logging.info(
+                log.info(
                     f"removing {paths2str(path)} for non exists {paths2str(root_path)}"
                 )
                 os.remove(path)
@@ -93,16 +94,16 @@ def pre_sync_from_root(args: ChezmoiArgs):
                     else has_changed_su(root_path, path)
                 )
             except PermissionError:
-                logging.error(
+                log.error(
                     f"skipped copying file {paths2str(path)} for permission error"
                 )
             if changed:
-                logging.info(
+                log.info(
                     f"copying changed file {paths2str(root_path)} -> {paths2str(path)}"
                 )
                 elevate_copy_file(root_path, path)
                 count += 1
-    logging.info(f"found changed {count} files")
+    log.info(f"found changed {count} files")
 
 
 def check_passhole(args: ChezmoiArgs):
@@ -129,7 +130,7 @@ def check_passhole(args: ChezmoiArgs):
         src_paths = [
             p for p in map(lambda p: args.get_source_path(p), args.target_paths()) if p
         ]
-        logging.debug(f"finding passhole template in {paths2str(src_paths)}")
+        log.debug(f"finding passhole template in {paths2str(src_paths)}")
 
         if src_paths:
             pat = re.compile(r'\{\{.*(passhole(\s+".+"){2}).*\}\}')
@@ -152,14 +153,14 @@ def check_passhole(args: ChezmoiArgs):
                             for line in file:
                                 if pat.search(line):
                                     has_ph = True
-                                    logging.info(
+                                    log.info(
                                         f"found passhole template in {paths2str(path)}"
                                     )
                                     break
                         if has_ph:
                             break
                     except UnicodeDecodeError:
-                        logging.info(
+                        log.info(
                             f"skipped check passhole for non-text {paths2str(path)}"
                         )
                         continue
@@ -171,7 +172,7 @@ def check_passhole(args: ChezmoiArgs):
             args = ["wsl.exe", "--", "ph", "list"]
             # 用户ctrl+c终止后retcode=0但无输出
             if not check_output(args, encoding="utf8").strip():
-                logging.error(f"failed to check passhole with {args}")
+                log.error(f"failed to check passhole with {args}")
                 raise SetupException("no passhole output found")
         elif which("ph"):
             check_call(["ph", "list"], stdout=DEVNULL)
@@ -190,7 +191,7 @@ def check_super_permission(args: ChezmoiArgs):
         )
     ):
         cmd = ["sudo", "echo"]
-        logging.info(f"checking super permission for {paths2str(target_paths)}")
+        log.info(f"checking super permission for {paths2str(target_paths)}")
         check_call(cmd, stdout=DEVNULL)
 
 
@@ -235,9 +236,9 @@ def print_env():
 def pre_run():
     s = os.environ["CHEZMOI_ARGS"]
     args = ChezmoiArgs(s)
+    config_log_cz()
     if args.has_debug():
         print(f"parsed chezmoi {args.__dict__} for args `{s}`")
-    args.init_log()
 
     try:
         check_passhole(args)
@@ -278,7 +279,7 @@ def copy_to_root(mapped_root: Path):
             try:
                 root_path.exists()
             except PermissionError:
-                logging.debug(f"checking exists for private {str(root_path)}")
+                log.debug(f"checking exists for private {str(root_path)}")
                 privated_path_exists = (
                     run(["sudo", "test", "-e", root_path]).returncode == 0
                 )
@@ -301,7 +302,7 @@ def copy_to_root(mapped_root: Path):
                 try:
                     changed = has_changed(path, root_path)
                 except PermissionError as e:
-                    logging.error(
+                    log.error(
                         f"Checking for changes fails with permission issues on files {paths2str(path)} -> {paths2str(root_path)}: {e}"
                     )
                     raise SetupException(e)
@@ -309,12 +310,12 @@ def copy_to_root(mapped_root: Path):
                     elevate_copy(path, root_path)
             else:
                 raise SetupException(f"invalid file {paths2str(root_path)}")
-    logging.info(f"copied {diff_count} files from {paths2str(mapped_root)}")
+    log.info(f"copied {diff_count} files from {paths2str(mapped_root)}")
 
 
 class RootCleaner:
     def __init__(self, mapped_root: Path, rootlist_path: Path, cz_bin) -> None:
-        self.log = logging.getLogger(__name__)
+        self.log = log.getLogger(__name__)
         self._rootlist_path = rootlist_path
         self._mapped_root = mapped_root
         self._cz_bin = cz_bin
@@ -504,23 +505,21 @@ def post_sync(args: ChezmoiArgs):
     target_paths = args.target_paths()
 
     if not mapped_root.is_dir():
-        logging.warning(
-            f"skipped apply mapped root {paths2str(mapped_root)} is not dir"
-        )
+        log.warning(f"skipped apply mapped root {paths2str(mapped_root)} is not dir")
     elif args.subcommand() != "apply":
-        logging.debug(f"skipped apply for subcommand: {args.subcommand()}")
+        log.debug(f"skipped apply for subcommand: {args.subcommand()}")
     # only run once when apply post and run script
     elif not target_paths and Path(__file__).name.startswith("run_after_"):
-        logging.debug("skipped apply for chezmoi scripts")
+        log.debug("skipped apply for chezmoi scripts")
     # target is not a sub path or self of mapped root
     elif target_paths and all(
         mapped_root not in p.parents and mapped_root != p for p in target_paths
     ):
-        logging.info(
+        log.info(
             f"skipped apply non mapped root {paths2str(mapped_root)} in target paths: {paths2str(target_paths)}"
         )
     else:
-        logging.info(f"syncing {paths2str(mapped_root)} to /")
+        log.info(f"syncing {paths2str(mapped_root)} to /")
         copy_to_root(mapped_root)
         RootCleaner(mapped_root, rootlist_path, args.bin_path()).clean(target_paths)
 
@@ -532,5 +531,5 @@ def post_run():
     try:
         post_sync(args)
     except SetupException as e:
-        logging.error(f"{e}")
+        log.error(f"{e}")
         exit(1)
