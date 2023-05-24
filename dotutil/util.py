@@ -7,7 +7,6 @@ import subprocess as sp
 from collections.abc import Iterable
 from io import BytesIO
 from pathlib import Path
-from subprocess import PIPE, Popen, check_call, check_output, run
 from typing import IO, Dict, Generator, List, Set, Union
 from urllib.request import urlopen
 
@@ -46,7 +45,7 @@ with open({repr(str(path))}, "rb") as f:
 
 def has_changed_su(src: Path, dst: Path) -> bool:
     def get_mode(path):
-        return check_output(["sudo", "stat", "--format", "%a", path], text=True)
+        return sp.check_output(["sudo", "stat", "--format", "%a", path], text=True)
 
     smode = get_mode(src)
     dmode = get_mode(dst)
@@ -93,10 +92,6 @@ def config_log_cz(log: logging.Logger = None, cz=None, level=logging.DEBUG):
     logger.setLevel(level)
     if log:
         log.setLevel(level)
-
-
-def chezmoi_data(cz_path="chezmoi"):
-    return json.loads(check_output(f"{cz_path} data --format json".split(), text=True))
 
 
 def elevate_copy_file(src: Path, dst: Path):
@@ -244,18 +239,17 @@ class ChezmoiArgs:
 
     def data(self) -> Dict[str, str]:
         if self._data is None:
-            self._data = json.loads(
-                check_output([self.bin_path(), "data", "--format", "json"], text=True)
-            )
+            out = sp.check_output(["{cz_path}", "data", "--format", "json"], text=True)
+            self._data = json.loads(out)
         return self._data
 
     def get_source_path(self, target: Path) -> Path:
         if target is None:
             raise SetupException("target is none")
-        p = run(
+        p = sp.run(
             [self.bin_path(), "source-path", target],
-            stdout=PIPE,
-            stderr=PIPE,
+            stdout=sp.PIPE,
+            stderr=sp.PIPE,
             text=True,
         )
         return Path(p.stdout.strip()) if p.returncode == 0 else None
@@ -276,17 +270,18 @@ class Restic:
     def dump(
         self, file: Path, snapshot_id="latest", **kwargs
     ) -> Generator[bytes, None, None]:
-        chunk_size = 1024
+        chunk_size = 1024 * 4
         args = [str(self._bin), "dump"]
         for k, v in kwargs.items():
             args += [f"--{k}", v]
         args += [snapshot_id, str(file)]
         self.log.debug(f"start running command {args}")
 
-        with Popen(args, stdout=PIPE, text=False, env=self._env) as p:
+        with sp.Popen(args, stdout=sp.PIPE, text=False, env=self._env) as p:
             with p.stdout as f:
                 self.log.debug(
-                    f"reading the stdout output data of restic process {p.pid} with chunk size={chunk_size}"
+                    f"reading the stdout output data of restic process {p.pid} "
+                    f"with chunk size={chunk_size}"
                 )
                 count = 0
                 while chunk := f.read(chunk_size):
@@ -308,4 +303,4 @@ class Restic:
             args += [f"--{k}", v]
         args += [snapshot_id]
         self.log.debug(f"start running command {args}")
-        check_call(args, env=self._env)
+        sp.check_call(args, env=self._env)
