@@ -13,6 +13,12 @@ psutil = "^5.9.5"
 [tool.poetry.group.test.dependencies]
 pytest = "^7.3.1"
 
+
+[tool.poetry.group.dev.dependencies]
+autopep8 = "^2.0.2"
+black = "^23.3.0"
+isort = "^5.12.0"
+
 [tool.pytest.ini_options]
 # [Logging within pytest tests](https://stackoverflow.com/a/51633600/8566831)
 # https://docs.pytest.org/en/7.1.x/how-to/logging.html#live-logs
