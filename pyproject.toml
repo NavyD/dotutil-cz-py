@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.9"
 psutil = "^5.9.5"
+pywin32 = "^306"
 
 
 [tool.poetry.group.test.dependencies]

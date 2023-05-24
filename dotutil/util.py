@@ -4,16 +4,12 @@ import logging
 import os
 import re
 import subprocess as sp
-import sys
-import textwrap
 from collections.abc import Iterable
 from io import BytesIO
 from pathlib import Path
 from subprocess import PIPE, Popen, check_call, check_output, run
 from typing import IO, Dict, Generator, List, Set, Union
 from urllib.request import urlopen
-
-import psutil
 
 from dotutil import SetupException, elevate, logger
 

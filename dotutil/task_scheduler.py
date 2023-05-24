@@ -4,7 +4,6 @@ import datetime
 import getpass
 import logging
 import os
-from pathlib import Path
 from shutil import which
 
 import psutil
@@ -13,8 +12,7 @@ if psutil.WINDOWS:
     import pywintypes
     import win32com.client
 
-log = logging.getLogger(Path(__file__).stem)
-log.setLevel(logging.INFO)
+log = logging.getLogger(__name__)
 
 
 def is_admin():

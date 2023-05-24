@@ -41,7 +41,7 @@ from dotutil.util import (
 """
 
 
-def sync_from_root(args: ChezmoiArgs):
+def pre_sync_from_root(args: ChezmoiArgs):
     mapped_root_dir = args.mapped_root()
     target_paths = args.target_paths()
     if target_paths and all(
@@ -245,7 +245,7 @@ def pre_run():
         check_wsl(args)
         check_restic(args)
 
-        sync_from_root(args)
+        pre_sync_from_root(args)
     except KeyboardInterrupt:
         print("Interrupt by user", file=sys.stderr)
         exit(1)
@@ -498,7 +498,7 @@ class RootCleaner:
         check_call(cmd)
 
 
-def sync(args: ChezmoiArgs):
+def post_sync(args: ChezmoiArgs):
     mapped_root = args.mapped_root()
     rootlist_path = args.root_list()
     target_paths = args.target_paths()
@@ -530,7 +530,7 @@ def post_run():
     args.init_log()
 
     try:
-        sync(args)
+        post_sync(args)
     except SetupException as e:
         logging.error(f"{e}")
         exit(1)
