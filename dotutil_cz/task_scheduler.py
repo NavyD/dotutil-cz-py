@@ -7,7 +7,7 @@ from shutil import which
 
 import psutil
 
-from dotutil import SetupException
+from dotutil_cz import SetupException
 
 if psutil.WINDOWS:
     import pywintypes

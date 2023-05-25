@@ -3,7 +3,7 @@ from pathlib import Path
 
 import psutil
 
-from dotutil.util import elevate_writefile
+from dotutil_cz.util import elevate_writefile
 
 # class ChezmoiArgsTest(TestCase):
 #     def test_args(self):

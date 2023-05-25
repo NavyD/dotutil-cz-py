@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "dotutil"
+name = "dotutil-cz"
 version = "0.1.0"
 description = ""
 authors = ["navyd <dhjnavyd@gmail.com>"]

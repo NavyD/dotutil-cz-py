@@ -10,8 +10,8 @@ from subprocess import PIPE, CalledProcessError, check_call, run
 from typing import Iterable, Set
 
 import psutil
-from dotutil import elevate
-from dotutil.util import (
+from dotutil_cz import elevate
+from dotutil_cz.util import (
     ChezmoiArgs,
     SetupException,
     config_log_cz,

@@ -1,6 +1,6 @@
 import subprocess as sp
 
-from dotutil import elevate
+from dotutil_cz import elevate
 
 
 def test_py_run():

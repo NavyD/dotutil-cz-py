@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import IO, Dict, Generator, List, Set, Union
 from urllib.request import urlopen
 
-from dotutil import SetupException, elevate, logger
+from dotutil_cz import SetupException, elevate, logger
 
 log = logging.getLogger(__name__)
 
