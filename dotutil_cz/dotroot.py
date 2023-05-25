@@ -6,10 +6,10 @@ import subprocess as sp
 import sys
 from pathlib import Path
 from shutil import which
-from subprocess import PIPE, CalledProcessError, check_call, run
 from typing import Iterable, Set
 
 import psutil
+
 from dotutil_cz import elevate
 from dotutil_cz.util import (
     ChezmoiArgs,
@@ -74,7 +74,7 @@ def pre_sync_from_root(args: ChezmoiArgs):
                 log.debug(f"checking exists for private {str(root_path)}")
                 privated_path = True
                 privated_path_exists = (
-                    run(["sudo", "test", "-e", root_path]).returncode == 0
+                    sp.run(["sudo", "test", "-e", root_path]).returncode == 0
                 )
 
             # remove mapped root path if root path not exists
@@ -299,10 +299,10 @@ def copy_to_root(mapped_root: Path):
             except PermissionError:
                 log.debug(f"checking exists for private {str(root_path)}")
                 privated_path_exists = (
-                    run(["sudo", "test", "-e", root_path]).returncode == 0
+                    sp.run(["sudo", "test", "-e", root_path]).returncode == 0
                 )
                 privated_path_is_file = (
-                    run(["sudo", "test", "-f", root_path]).returncode == 0
+                    sp.run(["sudo", "test", "-f", root_path]).returncode == 0
                 )
                 if not privated_path_exists:
                     elevate_copy(path, root_path)
@@ -332,12 +332,15 @@ def copy_to_root(mapped_root: Path):
 
 
 class RootCleaner:
-    def __init__(self, mapped_root: Path, rootlist_path: Path, cz_bin) -> None:
+    def __init__(
+        self, mapped_root: Path, rootlist_path: Path, cz_bin, cz_src_path: Path
+    ) -> None:
         self.log = logging.getLogger(__name__)
         self._rootlist_path = rootlist_path
         self._mapped_root = mapped_root
         self._cz_bin = cz_bin
         self._exact_pat = re.compile(r"^(\w+_)*exact_.+")
+        self._cz_src_path = cz_src_path
 
         # rootlist仅保存上次跳过删除的文件
         old_removable_mapped_paths = (
@@ -442,14 +445,51 @@ class RootCleaner:
         return removable_paths
 
     def is_exact(self, path: Path) -> bool:
-        p = run(
-            [self._cz_bin, "source-path", path], stdout=PIPE, stderr=PIPE, text=True
+        """
+        检查path所在的目录是否包含exact属性。
+        首先使用glob在cz源码目录中检查是否存在相应目录，如果存在1个目录则检查，以避免使用命令
+        不存在则使用cz source-path命令查找
+        """
+        # include mapped root self:
+        # ~/.root relative_to mappedroot:~/.root => .
+        # ~/.root relative_to mappedroot:~ => .root
+        relp = path.relative_to(self._mapped_root.parent)
+        glob_pat = ""
+        for name in relp.parts:
+            s = "*"
+            # Source state attribute: https://www.chezmoi.io/reference/source-state-attributes/
+            # only replace first dot
+            if name.startswith("."):
+                s += f"dot_{name[1:]}"
+            else:
+                s += name
+            glob_pat += f"{s}{os.sep}"
+        self.log.debug(
+            f"finding recursive {self._cz_src_path} with "
+            f"glob pat {glob_pat} for relative {relp} in {path}"
         )
-        if p.returncode == 0:
-            return self._exact_pat.match(Path(p.stdout.strip()).name) is not None
+        # no relative path: . => empty
+        glob_paths = [p for p in self._cz_src_path.rglob(glob_pat)] if glob_pat else []
+        self.log.debug(
+            f"checking if {len(glob_paths)} paths {paths2str(glob_paths)} is exact for {path}"
+        )
+        if len(glob_paths) == 1:
+            return self._exact_pat.match(glob_paths[0].name) is not None
+
+        args = [self._cz_bin, "source-path", path]
+        self.log.debug(f"checking if {path} is exact with {args}")
+        name = sp.run(
+            args,
+            stdout=sp.PIPE,
+            stderr=sp.PIPE,
+            text=True,
+        )
+        if name.returncode == 0:
+            return self._exact_pat.match(Path(name.stdout.strip()).name) is not None
         else:
             self.log.debug(
-                f"failed to run source path {paths2str(path)} on status {p.returncode}: {p.stderr.strip()}"
+                f"failed to run source path {paths2str(path)} "
+                f"on status {name.returncode}: {name.stderr.strip()}"
             )
             return False
 
@@ -487,7 +527,7 @@ class RootCleaner:
                             self.elevate_rm(path)
                             removed_paths.add(path)
                         # skipped if failed to remove
-                        except CalledProcessError as e:
+                        except sp.CalledProcessError as e:
                             self.log.error(
                                 f"failed to remove {paths2str(path)}: returncode={e.returncode}"
                             )
@@ -514,4 +554,4 @@ class RootCleaner:
         else:
             cmd = ["sudo", "rm", "-rf", str(path)]
         self.log.info(f"removing {paths2str(path)} with command: {cmd}")
-        check_call(cmd)
+        sp.check_call(cmd)

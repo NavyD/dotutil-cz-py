@@ -261,6 +261,11 @@ class ChezmoiArgs:
         )
         return Path(p.stdout.strip()) if p.returncode == 0 else None
 
+    def source_dir(self) -> Path:
+        if not (v := os.environ.get("CHEZMOI_SOURCE_DIR")):
+            v = self.data()["sourceDir"]
+        return Path(v)
+
 
 class Restic:
     def __init__(self, bin: str, env=None) -> None:
