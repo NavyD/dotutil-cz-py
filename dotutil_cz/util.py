@@ -85,7 +85,7 @@ def config_log_cz(log: logging.Logger = None, cz=None, level=logging.DEBUG):
     if cz is None:
         try:
             cz = ChezmoiArgs()
-        except SetupException():
+        except SetupException:
             pass
     if cz:
         if cz.has_debug():
