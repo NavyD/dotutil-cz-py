@@ -148,9 +148,11 @@ def setup_syncthing(run_userid=None):
     * 对于任务计划程序 2.0 任务，“NT AUTHORITY\\LOCALSERVICE”和“NT AUTHORITY\\NETWORKSERVICE”也是有效值。
     * 对于当前账户可以使用f'{username}'表示或`f"{os.environ['USERDOMAIN']}\\{os.environ['USERNAME']}"`格式
     """
+    elevated = is_admin()
+
     if not (bin := which("syncthing.exe")):
         raise SetupException("not found syncthing bin")
-    if run_userid is None and not is_admin():
+    if run_userid is None and not elevated:
         run_userid = getpass.getuser()
 
     args = [bin, "--no-console", "--no-browser"]
@@ -173,7 +175,7 @@ def setup_syncthing(run_userid=None):
     if run_userid is not None:
         log.debug(f"run task trigger logon with user {run_userid}")
         trigger_logon.UserId = run_userid
-    elif is_admin():
+    elif elevated:
         log.info("run task trigger logon any user by administrator")
 
     # Create action
@@ -198,11 +200,11 @@ def setup_syncthing(run_userid=None):
     # [TaskDefinition.Principal property](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskdefinition-principal)
     principal_cur = task_def.Principal
     # https://learn.microsoft.com/en-us/windows/win32/taskschd/principal-logontype#property-value
-    # task_logon_interactive_token
-    principal_cur.LogonType = 3  # TASK_LOGON_INTERACTIVE_TOKEN
+    # TASK_LOGON_S4U run with any user or task_logon_interactive_token
+    principal_cur.LogonType = 2 if elevated else 3
     # https://learn.microsoft.com/en-us/windows/win32/taskschd/principal-runlevel
     principal_cur.RunLevel = 0  # TASK_RUNLEVEL_LUA
-    if is_admin():
+    if elevated:
         log.info("run task with the highest privileges")
         principal_cur.RunLevel = 1  # TASK_RUNLEVEL_HIGHEST. require UAC
 
