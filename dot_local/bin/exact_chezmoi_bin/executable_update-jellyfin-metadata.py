@@ -15,6 +15,7 @@ import docker
 class MdcData:
     src_path: str
     dst_path: str
+    config_dir: str
 
     def output_path(self) -> Path:
         return Path(self.src_path).joinpath("JAV_output")
@@ -32,7 +33,7 @@ class AvUpdater:
             lambda p: p.stat().st_size <= 1024 * 1024 * 100  # noqa: W504,W503  # 100mb
             and (v := mimetypes.guess_type(p))  # noqa: W503
             and v[0]  # noqa: W503
-            and v[0].startswith("video")
+            and v[0].startswith("video")  # noqa: W503
         )  # noqa: W503
         self._start_mdc()
         self._merge_mdc_output_to_dst()
@@ -111,21 +112,15 @@ class AvUpdater:
             c = self._docker.containers.get(name)
         except docker.errors.NotFound:
             self.log.info(f"Creating new container {name}")
-            volname = "mdc-config"
-            created_vol = False
-            try:
-                self._docker.volumes.get(volname)
-            except docker.errors.NotFound:
-                self.log.debug(f"creating volume {volname}")
-                self._docker.volumes.create(volname)
-                created_vol = True
-
             c = self._docker.containers.create(
-                "vergilgao/mdc:6",
+                "navyd/mdc",
                 name=name,
                 stdin_open=True,
                 tty=True,
-                volumes=[f"{volname}:/config", f"{self._mdc.src_path}:/data"],
+                volumes=[
+                    f"{self._mdc.config_dir}:/config",
+                    f"{self._mdc.src_path}:/data",
+                ],
                 environment=[
                     f"UID={os.getuid()}",
                     f"GID={os.getgid()}",
@@ -133,13 +128,6 @@ class AvUpdater:
                     "UMASK=022",
                 ],
             )
-            #  config file missing, we create a new config file, modify the config file and restart container please!
-            # 没有找到配置文件，我们创建了一个新的配置文件，请修改后重启镜像
-            if created_vol:
-                self.log.info(f"starting new mdc for new volume {volname} at first")
-                c.start()
-                self._docker_attach_check(name)
-
         self.log.info(f"starting container {name}")
         c.start()
         self._docker_attach_check(name)
@@ -174,14 +162,16 @@ class AvUpdater:
         self._docker_attach_check(name)
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s",
         level=logging.INFO,
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     mdc = MdcData(
-        "/mnt/share/Downloads/completed/avs", "/mnt/share/.Magics/AVs/JAV_output"
+        "/mnt/share/Downloads/completed/avs",
+        "/mnt/share/.Magics/AVs/JAV_output",
+        str(Path.home().joinpath(".config/docker/rpi4/mdc-config")),
     )
     avup = AvUpdater(mdc)
     try:
@@ -192,3 +182,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"failed to update metadata by {e}", file=sys.stderr)
         exit(2)
+
+
+if __name__ == "__main__":
+    main()
