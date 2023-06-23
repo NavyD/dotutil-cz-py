@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import logging
-import mimetypes
 import os
 import shutil
 import sys
@@ -29,12 +28,8 @@ class AvUpdater:
         self.log = logging.getLogger(__name__)
 
     def run(self):
-        self._remove_src_files(
-            lambda p: p.stat().st_size <= 1024 * 1024 * 100  # noqa: W504,W503  # 100mb
-            and (v := mimetypes.guess_type(p))  # noqa: W503
-            and v[0]  # noqa: W503
-            and v[0].startswith("video")  # noqa: W503
-        )  # noqa: W503
+        # auto remove empty by mdc
+        self._remove_src_files(lambda p: p.stat().st_size <= 1024 * 1024 * 100)  # 100mb
         self._start_mdc()
         self._merge_mdc_output_to_dst()
         self._start_gfriends_inputer()
