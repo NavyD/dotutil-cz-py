@@ -136,6 +136,9 @@ def main():
     if not args.idle_interval or not args.alive_interval or not args.path:
         raise Exception(f"has empty args: {args}")
 
+    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
+                        level=logging.INFO,
+                        datefmt='%Y-%m-%d %H:%M:%S')
     disk = AliveDisk(args.path)
     Keeper(args.idle_interval, args.alive_interval, shake=5).run(disk)
 
@@ -168,8 +171,4 @@ def test():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(format='%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s',
-                        level=logging.INFO,
-                        datefmt='%Y-%m-%d %H:%M:%S')
     main()
-    # test()
