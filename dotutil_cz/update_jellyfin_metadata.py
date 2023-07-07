@@ -8,6 +8,8 @@ from typing import Callable
 
 import docker
 
+from dotutil_cz.util import config_global_log
+
 
 @dataclass
 class MdcData:
@@ -99,15 +101,29 @@ class AvUpdater:
         if res["StatusCode"] != 0:
             raise Exception(f"container {name} exit failed {res['StatusCode']}")
 
+    def _docker_pull_if(self, repo):
+        try:
+            self._docker.images.get(repo)
+        except docker.errors.NotFound:
+            self.log.info(f"Pulling image {repo}")
+            for s in self._docker.api.pull(repo, stream=True, decode=True):
+                # {'status': 'Pulling from navyd/mdc', 'id': 'latest'}
+                # {'status': 'Pulling fs layer', 'progressDetail': {}, 'id': '9d21b12d5fab'}
+                # {'status': 'Downloading', 'progressDetail': {'current': 666, 'total': 666}, 'progress': '[==================================================>]     666B/666B', 'id': '0ee564007c6b'}
+                self.log.debug(f"{s['status']}: {s.setdefault('progress', s['id'])}")
+            pass
+
     def _start_mdc(self):
         """generate jellyfin metadata from av videos"""
         name = "mdc"
         try:
             c = self._docker.containers.get(name)
         except docker.errors.NotFound:
+            repo = "navyd/mdc"
+            self._docker_pull_if(repo)
             self.log.info(f"Creating new container {name}")
             c = self._docker.containers.create(
-                "navyd/mdc",
+                repo,
                 name=name,
                 stdin_open=True,
                 tty=True,
@@ -132,12 +148,14 @@ class AvUpdater:
         try:
             c = self._docker.containers.get(name)
         except docker.errors.NotFound:
+            repo = "navyd/gfriends-inputer"
+            self._docker_pull_if(repo)
             self.log.info(f"Creating new container {name}")
             volname = "gfriends-inputer-data"
             self._docker.volumes.create(volname)
 
             c = self._docker.containers.create(
-                "navyd/gfriends-inputer",
+                repo,
                 "-q --debug",
                 name=name,
                 # resolve jellyfin host url, jellyfin network: c875a2a000c8   rpi4_default   bridge    local
@@ -157,11 +175,7 @@ class AvUpdater:
 
 
 def main():
-    logging.basicConfig(
-        format="%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    config_global_log()
     mdc = MdcData(
         "/mnt/share/Downloads/completed/avs",
         "/mnt/share/.Magics/AVs/JAV_output",
