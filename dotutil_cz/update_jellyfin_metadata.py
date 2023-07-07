@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import click
 import docker
 
 from dotutil_cz.util import config_global_log
@@ -22,10 +23,11 @@ class MdcData:
 
 
 class AvUpdater:
-    def __init__(self, mdc: MdcData) -> None:
+    def __init__(self, non_interactive: bool, mdc: MdcData) -> None:
         self._mdc = mdc
         self._docker = docker.from_env()
         self._stop_timeout = 2
+        self._non_interactive = non_interactive
         self.log = logging.getLogger(__name__)
 
     def run(self):
@@ -54,9 +56,13 @@ class AvUpdater:
                     if os.path.samefile(src, new_dst):
                         self.log.debug(f"skipping move same files: {src}, {new_dst}")
                         continue
-                    else:
+                    elif self._non_interactive or click.confirm(
+                        f"Are you sure you want to overwrite `{str(new_dst)}` with `{str(src)}`?"
+                    ):
                         self.log.info(f"overwrite {new_dst} from {src}")
                         os.remove(new_dst)
+                    else:
+                        self.log.warning(f"skipped overwrite {new_dst} with {src}")
 
                 self.log.debug(f"moving {src} to {new_dst}")
                 os.makedirs(new_dst.parent, exist_ok=True)
@@ -76,8 +82,13 @@ class AvUpdater:
             if path.is_relative_to(out):
                 continue
             if path.is_file() and filter(path):
-                self.log.info(f"removing {str(path)}, size={path.stat().st_size}")
-                os.remove(path)
+                if self._non_interactive or click.confirm(
+                    f"Are you sure you want to delete `{str(path)}`?"
+                ):
+                    self.log.info(f"removing {str(path)}, size={path.stat().st_size}")
+                    os.remove(path)
+                else:
+                    self.log.warning(f"skipped remove {str(path)}")
             else:
                 self.log.debug(f"skip removing {path}")
 
@@ -174,14 +185,25 @@ class AvUpdater:
         self._docker_attach_check(name)
 
 
-def main():
+@click.command
+@click.option(
+    "-v",
+    "--verbose",
+    count=True,
+    default=2,
+    type=click.IntRange(0, 3),
+)
+@click.option("--src", required=True, type=click.Path())
+@click.option("--dst", required=True, type=click.Path())
+@click.option("--config-dir", "-C", type=click.Path())
+@click.option("--non-interactive", "-n", default=False)
+def main(src: Path, dst: Path, config_dir: Path, verbose: int, non_interactive: bool):
     config_global_log()
-    mdc = MdcData(
-        "/mnt/share/Downloads/completed/avs",
-        "/mnt/share/.Magics/AVs/JAV_output",
-        str(Path.home().joinpath(".config/docker/rpi4/mdc-config")),
-    )
-    avup = AvUpdater(mdc)
+    log = logging.getLogger(__name__)
+    log.setLevel(logging.ERROR - verbose * 10)
+
+    mdc = MdcData(str(src), str(dst), str(config_dir))
+    avup = AvUpdater(non_interactive, mdc)
     try:
         avup.run()
     except KeyboardInterrupt:
