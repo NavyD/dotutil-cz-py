@@ -133,7 +133,9 @@ def check_passhole(cz: ChezmoiArgs):
         log.debug(f"finding passhole template in {paths2str(src_paths)}")
 
         if src_paths:
-            pat = re.compile(r'\{\{.*(passhole(\s+".+"){2}).*\}\}')
+            pat = re.compile(
+                r'\{\{.*(passhole(\s+".+"){2})|(includeTemplate\s+"\s*restic-dump\s*"\s+).*\}\}'
+            )
             paths = set()
             # find all files
             for path in src_paths:
