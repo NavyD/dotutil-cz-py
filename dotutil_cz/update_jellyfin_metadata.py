@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import click
 import docker
+
+from dotutil_cz.util import config_global_log
 
 
 @dataclass
@@ -20,10 +23,11 @@ class MdcData:
 
 
 class AvUpdater:
-    def __init__(self, mdc: MdcData) -> None:
+    def __init__(self, non_interactive: bool, mdc: MdcData) -> None:
         self._mdc = mdc
         self._docker = docker.from_env()
         self._stop_timeout = 2
+        self._non_interactive = non_interactive
         self.log = logging.getLogger(__name__)
 
     def run(self):
@@ -52,9 +56,13 @@ class AvUpdater:
                     if os.path.samefile(src, new_dst):
                         self.log.debug(f"skipping move same files: {src}, {new_dst}")
                         continue
-                    else:
+                    elif self._non_interactive or click.confirm(
+                        f"Are you sure you want to overwrite `{str(new_dst)}` with `{str(src)}`?"
+                    ):
                         self.log.info(f"overwrite {new_dst} from {src}")
                         os.remove(new_dst)
+                    else:
+                        self.log.warning(f"skipped overwrite {new_dst} with {src}")
 
                 self.log.debug(f"moving {src} to {new_dst}")
                 os.makedirs(new_dst.parent, exist_ok=True)
@@ -74,8 +82,13 @@ class AvUpdater:
             if path.is_relative_to(out):
                 continue
             if path.is_file() and filter(path):
-                self.log.info(f"removing {str(path)}, size={path.stat().st_size}")
-                os.remove(path)
+                if self._non_interactive or click.confirm(
+                    f"Are you sure you want to delete `{str(path)}`?"
+                ):
+                    self.log.info(f"removing {str(path)}, size={path.stat().st_size}")
+                    os.remove(path)
+                else:
+                    self.log.warning(f"skipped remove {str(path)}")
             else:
                 self.log.debug(f"skip removing {path}")
 
@@ -99,15 +112,29 @@ class AvUpdater:
         if res["StatusCode"] != 0:
             raise Exception(f"container {name} exit failed {res['StatusCode']}")
 
+    def _docker_pull_if(self, repo):
+        try:
+            self._docker.images.get(repo)
+        except docker.errors.NotFound:
+            self.log.info(f"Pulling image {repo}")
+            for s in self._docker.api.pull(repo, stream=True, decode=True):
+                # {'status': 'Pulling from navyd/mdc', 'id': 'latest'}
+                # {'status': 'Pulling fs layer', 'progressDetail': {}, 'id': '9d21b12d5fab'}
+                # {'status': 'Downloading', 'progressDetail': {'current': 666, 'total': 666}, 'progress': '[==================================================>]     666B/666B', 'id': '0ee564007c6b'}
+                self.log.debug(f"{s['status']}: {s.setdefault('progress', s['id'])}")
+            pass
+
     def _start_mdc(self):
         """generate jellyfin metadata from av videos"""
         name = "mdc"
         try:
             c = self._docker.containers.get(name)
         except docker.errors.NotFound:
+            repo = "navyd/mdc"
+            self._docker_pull_if(repo)
             self.log.info(f"Creating new container {name}")
             c = self._docker.containers.create(
-                "navyd/mdc",
+                repo,
                 name=name,
                 stdin_open=True,
                 tty=True,
@@ -132,12 +159,14 @@ class AvUpdater:
         try:
             c = self._docker.containers.get(name)
         except docker.errors.NotFound:
+            repo = "navyd/gfriends-inputer"
+            self._docker_pull_if(repo)
             self.log.info(f"Creating new container {name}")
             volname = "gfriends-inputer-data"
             self._docker.volumes.create(volname)
 
             c = self._docker.containers.create(
-                "navyd/gfriends-inputer",
+                repo,
                 "-q --debug",
                 name=name,
                 # resolve jellyfin host url, jellyfin network: c875a2a000c8   rpi4_default   bridge    local
@@ -156,18 +185,25 @@ class AvUpdater:
         self._docker_attach_check(name)
 
 
-def main():
-    logging.basicConfig(
-        format="%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s.%(funcName)s]: %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    mdc = MdcData(
-        "/mnt/share/Downloads/completed/avs",
-        "/mnt/share/.Magics/AVs/JAV_output",
-        str(Path.home().joinpath(".config/docker/rpi4/mdc-config")),
-    )
-    avup = AvUpdater(mdc)
+@click.command
+@click.option(
+    "-v",
+    "--verbose",
+    count=True,
+    default=2,
+    type=click.IntRange(0, 3),
+)
+@click.option("--src", required=True, type=click.Path())
+@click.option("--dst", required=True, type=click.Path())
+@click.option("--config-dir", "-C", type=click.Path())
+@click.option("--non-interactive", "-n", default=False)
+def main(src: Path, dst: Path, config_dir: Path, verbose: int, non_interactive: bool):
+    config_global_log()
+    log = logging.getLogger(__name__)
+    log.setLevel(logging.ERROR - verbose * 10)
+
+    mdc = MdcData(str(src), str(dst), str(config_dir))
+    avup = AvUpdater(non_interactive, mdc)
     try:
         avup.run()
     except KeyboardInterrupt:
